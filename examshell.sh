@@ -60,6 +60,8 @@ REAL_MODE=0
 EXIT_REQUESTED=0
 SELECTED_LEVEL=""
 SELECTED_EXERCISE=""
+LANGUAGE="pt"
+USER_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/examshell"
 WORKDIR_ROOT="${HOME}/.examshell/sessions"
 CC=${CC:-cc}
 read -r -a COMPILER <<< "$CC"
@@ -81,9 +83,137 @@ fi
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-die() { echo "${RED}Erro:${RST} $*" >&2; exit 1; }
+die() { echo "${RED}$(tr_text 'Erro:' 'Error:')${RST} $*" >&2; exit 1; }
 
 hr() { printf '%s\n' '────────────────────────────────────────────────────────────────────'; }
+
+tr_text() {
+    local pt="$1" en="$2"
+    if [ "$LANGUAGE" = en ]; then printf '%s' "$en"; else printf '%s' "$pt"; fi
+}
+
+ui() {
+    local key="$1"
+    if [ "$LANGUAGE" = "en" ]; then
+        case "$key" in
+            title) printf 'EXAM SHELL · 42 EXAM PRACTICE' ;;
+            choose_exam) printf 'Select an exam to begin:' ;;
+            real_mode) printf 'Real Mode (all exams in sequence)' ;;
+            random_exam) printf 'Random exam' ;;
+            choose_exercise) printf 'Choose level/exercise' ;;
+            settings) printf 'Settings' ;;
+            update_available) printf 'Update from GitHub (%s new commits)' "$2" ;;
+            up_to_date) printf 'Updates: up to date' ;;
+            update_diverged) printf 'Update from GitHub (branches diverged)' ;;
+            check_updates) printf 'Check for updates (GitHub unavailable)' ;;
+            quit) printf 'Quit' ;;
+            settings_title) printf 'Settings' ;;
+            language) printf 'Language' ;;
+            back) printf 'Back' ;;
+            choose_language) printf 'Choose a language:' ;;
+            language_saved) printf 'Language set to English.' ;;
+            invalid_option) printf 'Invalid option.' ;;
+            exercise) printf 'EXERCISE' ;;
+            paused) printf 'Time: paused' ;;
+            unlimited) printf 'Time: unlimited' ;;
+            time_warning) printf 'Time: %s · WARNING: 5 minutes or less remain' "$2" ;;
+            time) printf 'Time: %s' "$2" ;;
+            edit) printf 'Edit' ;;
+            load) printf 'Load' ;;
+            compile) printf 'Compile' ;;
+            test) printf 'Test' ;;
+            run) printf 'Run' ;;
+            subject) printf 'Subject' ;;
+            next) printf 'Next' ;;
+            skip) printf 'Skip' ;;
+            select_prompt) printf 'examshell > ' ;;
+            *) printf '%s' "$key" ;;
+        esac
+    else
+        case "$key" in
+            title) printf 'EXAMSHELL · TREINO DE EXAMES 42' ;;
+            choose_exam) printf 'Selecione um exame para começar:' ;;
+            real_mode) printf 'Modo Real (todos em sequência)' ;;
+            random_exam) printf 'Exame aleatório' ;;
+            choose_exercise) printf 'Selecionar nível/exercício' ;;
+            settings) printf 'Configurações' ;;
+            update_available) printf 'Atualizar pelo GitHub (%s commits novos)' "$2" ;;
+            up_to_date) printf 'Atualizações: em dia' ;;
+            update_diverged) printf 'Atualizar pelo GitHub (branches divergentes)' ;;
+            check_updates) printf 'Verificar atualizações (GitHub indisponível)' ;;
+            quit) printf 'Sair do programa' ;;
+            settings_title) printf 'Configurações' ;;
+            language) printf 'Idioma' ;;
+            back) printf 'Voltar' ;;
+            choose_language) printf 'Selecione um idioma:' ;;
+            language_saved) printf 'Idioma definido como Português.' ;;
+            invalid_option) printf 'Opção inválida.' ;;
+            exercise) printf 'EXERCÍCIO' ;;
+            paused) printf 'Tempo: pausado' ;;
+            unlimited) printf 'Tempo: sem limite' ;;
+            time_warning) printf 'Tempo: %s · AVISO: restam 5 min ou menos' "$2" ;;
+            time) printf 'Tempo: %s' "$2" ;;
+            edit) printf 'Editar' ;;
+            load) printf 'Carregar' ;;
+            compile) printf 'Compilar' ;;
+            test) printf 'Testar' ;;
+            run) printf 'Executar' ;;
+            subject) printf 'Enunciado' ;;
+            next) printf 'Próximo' ;;
+            skip) printf 'Saltar' ;;
+            select_prompt) printf 'examshell › ' ;;
+            *) printf '%s' "$key" ;;
+        esac
+    fi
+}
+
+load_language() {
+    local saved_language=""
+    if [ -r "$USER_CONFIG_DIR/config" ]; then
+        IFS='=' read -r _ saved_language < "$USER_CONFIG_DIR/config"
+    fi
+    case "$saved_language" in
+        pt|en) LANGUAGE="$saved_language" ;;
+    esac
+}
+
+save_language() {
+    mkdir -p "$USER_CONFIG_DIR" || return 1
+    (umask 077; printf 'language=%s\n' "$LANGUAGE" > "$USER_CONFIG_DIR/config")
+}
+
+settings_menu() {
+    local choice language_choice
+    while true; do
+        clear_terminal
+        section "$(ui settings_title)"
+        printf '  [1] %s (%s)\n' "$(ui language)" "$([ "$LANGUAGE" = en ] && printf 'English' || printf 'Português')"
+        printf '  [q] %s\n\n' "$(ui back)"
+        read -r -p '› ' choice || { clear_terminal; return; }
+        case "$choice" in
+            1)
+                clear_terminal
+                section "$(ui choose_language)"
+                printf '  [1] Português\n  [2] English\n  [q] %s\n' "$(ui back)"
+                read -r -p '› ' language_choice || { clear_terminal; return; }
+                case "$language_choice" in
+                    1) LANGUAGE=pt ;;
+                    2) LANGUAGE=en ;;
+                    q|Q) clear_terminal; continue ;;
+                    *) printf '%s\n' "$(ui invalid_option)"; continue ;;
+                esac
+                if ! save_language; then
+                    printf '%s\n' "$(tr_text 'Não foi possível guardar a configuração.' 'Could not save the setting.')"
+                else
+                    printf '%s\n' "$(ui language_saved)"
+                fi
+                ;;
+            q|Q) clear_terminal; return ;;
+            *) printf '%s\n' "$(ui invalid_option)" ;;
+        esac
+        read -r -p "$(tr_text 'ENTER › ' 'Press ENTER › ')" _ || { clear_terminal; return; }
+    done
+}
 
 section() {
     hr
@@ -91,10 +221,21 @@ section() {
     hr
 }
 
-need_bin() { command -v "$1" >/dev/null 2>&1 || die "required tool '$1' not found in PATH"; }
+need_bin() { command -v "$1" >/dev/null 2>&1 || die "$(tr_text "ferramenta obrigatória '$1' não encontrada no PATH" "required tool '$1' not found in PATH")"; }
 
 usage() {
-    sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
+    if [ "$LANGUAGE" = en ]; then
+        cat <<'EOF'
+EXAM SHELL - 42 exam practice
+Usage: ./examshell.sh [-d EXERCISE_BANK] [-e EXAM] [-t MINUTES] [-h]
+  -d PATH     Use an exercise bank from another directory
+  -e EXAM     Start exam-00, exam-01, exam-02, final-exam, real, or random
+  -t MINUTES  Set the session duration; 0 means no time limit
+  -h          Show this help
+EOF
+    else
+        sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
+    fi
     exit 0
 }
 
@@ -109,9 +250,9 @@ parse_args() {
         esac
     done
     shift $((OPTIND - 1))
-    [ "$#" -eq 0 ] || die "unexpected argument: $1 (use -h for help)"
+    [ "$#" -eq 0 ] || die "$(tr_text 'argumento inesperado: use -h para ajuda' 'unexpected argument: use -h for help') $1"
     if [ -n "$DURATION_MIN" ]; then
-        [[ "$DURATION_MIN" =~ ^[0-9]+$ ]] || die "duration must be a non-negative whole number of minutes"
+        [[ "$DURATION_MIN" =~ ^[0-9]+$ ]] || die "$(tr_text 'a duração deve ser um número inteiro de minutos igual ou maior que zero' 'duration must be a non-negative whole number of minutes')"
     fi
 }
 
@@ -124,10 +265,10 @@ run_preflight() {
     for bin in "${required[@]}"; do
         command -v "$bin" >/dev/null 2>&1 || missing+=("$bin")
     done
-    command -v git >/dev/null 2>&1 || problems+=("git não encontrado; a verificação/atualização pelo GitHub ficará indisponível")
+    command -v git >/dev/null 2>&1 || problems+=("$(tr_text 'git não encontrado; a verificação/atualização pelo GitHub ficará indisponível' 'git not found; GitHub update checks will be unavailable')")
 
     if [[ ! -d "$EXAM_ROOT" || ! -r "$EXAM_ROOT" ]]; then
-        fatal+=("banco de exercícios '$EXAM_ROOT' não existe ou não pode ser lido")
+        fatal+=("$(tr_text 'banco de exercícios' 'exercise bank') '$EXAM_ROOT' $(tr_text 'não existe ou não pode ser lido' 'does not exist or cannot be read')")
     else
         shopt -q nullglob && old_nullglob=1
         shopt -q globstar && old_globstar=1
@@ -138,14 +279,14 @@ run_preflight() {
         done
         exam_count=${#exam_dirs[@]}
         if [ "$exam_count" -eq 0 ]; then
-            fatal+=("não há pastas de exames em '$EXAM_ROOT'")
+            fatal+=("$(tr_text 'não há pastas de exames em' 'no exam directories found in') '$EXAM_ROOT'")
         fi
         for exam in "${exam_dirs[@]}"; do
             levels=("$exam"/Level*)
             local valid_levels=0
             for level in "${levels[@]}"; do [[ -d "$level" ]] && valid_levels=$((valid_levels+1)); done
             if [ "$valid_levels" -eq 0 ]; then
-                problems+=("${exam##*/}: não contém pastas 'Level *'")
+                problems+=("${exam##*/}: $(tr_text 'não contém pastas' 'contains no directories matching') 'Level *'")
                 continue
             fi
             level_count=$((level_count+valid_levels))
@@ -153,12 +294,12 @@ run_preflight() {
                 [[ -d "$level" ]] || continue
                 subjects=("$level"/**/*.subject.txt)
                 if [ "${#subjects[@]}" -eq 0 ]; then
-                    problems+=("${exam##*/}/${level##*/}: não contém enunciados *.subject.txt")
+                    problems+=("${exam##*/}/${level##*/}: $(tr_text 'não contém enunciados' 'contains no subject files') *.subject.txt")
                     continue
                 fi
                 for subject in "${subjects[@]}"; do
                     if [[ ! -r "$subject" || ! -s "$subject" ]]; then
-                        problems+=("$subject: vazio ou sem permissão de leitura")
+                        problems+=("$subject: $(tr_text 'vazio ou sem permissão de leitura' 'empty or not readable')")
                         continue
                     fi
                     has_name=0
@@ -170,29 +311,29 @@ run_preflight() {
                         [[ "$line" =~ ^project[[:space:]]+name[[:space:]]*: ]] && has_project=1
                     done < "$subject"
                     if { [ "$has_name" -eq 0 ] || [ "$has_expected" -eq 0 ]; } && [ "$has_project" -eq 0 ]; then
-                        problems+=("$subject: faltam campos Assignment name e/ou Expected files; serão usados valores padrão")
+                        problems+=("$subject: $(tr_text 'faltam campos Assignment name e/ou Expected files; serão usados valores padrão' 'missing Assignment name and/or Expected files; defaults will be used')")
                     fi
                 done
             done
         done
         [ "$old_nullglob" -eq 1 ] || shopt -u nullglob
         [ "$old_globstar" -eq 1 ] || shopt -u globstar
-        [ "$level_count" -gt 0 ] || fatal+=("o banco não contém nenhum nível utilizável")
+        [ "$level_count" -gt 0 ] || fatal+=("$(tr_text 'o banco não contém nenhum nível utilizável' 'the exercise bank contains no usable levels')")
     fi
 
     if [ "${#missing[@]}" -gt 0 ]; then
-        printf '%sVerificação inicial: faltam dependências obrigatórias:%s\n' "$RED$BOLD" "$RST" >&2
+        printf '%s%s%s\n' "$RED$BOLD" "$(tr_text 'Verificação inicial: faltam dependências obrigatórias:' 'Preflight: required dependencies are missing:')" "$RST" >&2
         for line in "${missing[@]}"; do printf '  - %s\n' "$line" >&2; done
     fi
     if [ "${#fatal[@]}" -gt 0 ]; then
-        printf '%sNão é possível iniciar: banco de exercícios inválido.%s\n' "$RED$BOLD" "$RST" >&2
+        printf '%s%s%s\n' "$RED$BOLD" "$(tr_text 'Não é possível iniciar: banco de exercícios inválido.' 'Cannot start: the exercise bank is invalid.')" "$RST" >&2
         for line in "${fatal[@]}"; do printf '  - %s\n' "$line" >&2; done
     fi
     if [ "${#problems[@]}" -gt 0 ]; then
-        printf '%sAvisos da verificação inicial (%s exame(s), %s nível(is)):%s\n' "$YEL$BOLD" "$exam_count" "$level_count" "$RST" >&2
+        printf '%s%s (%s %s, %s %s):%s\n' "$YEL$BOLD" "$(tr_text 'Avisos da verificação inicial' 'Preflight warnings')" "$exam_count" "$(tr_text 'exame(s)' 'exam(s)')" "$level_count" "$(tr_text 'nível(is)' 'level(s)')" "$RST" >&2
         for line in "${problems[@]}"; do printf '  - %s\n' "$line" >&2; done
     elif [ "${#missing[@]}" -eq 0 ] && [ "${#fatal[@]}" -eq 0 ]; then
-        printf '%sVerificação inicial concluída: dependências e banco de exercícios prontos (%s exame(s), %s nível(is)).%s\n' "$GRN" "$exam_count" "$level_count" "$RST"
+        printf '%s%s (%s %s, %s %s).%s\n' "$GRN" "$(tr_text 'Verificação inicial concluída: dependências e banco de exercícios prontos' 'Preflight complete: dependencies and exercise bank are ready')" "$exam_count" "$(tr_text 'exame(s)' 'exam(s)')" "$level_count" "$(tr_text 'nível(is)' 'level(s)')" "$RST"
     fi
     [ "${#missing[@]}" -eq 0 ] && [ "${#fatal[@]}" -eq 0 ]
 }
@@ -213,7 +354,7 @@ choose_exam() {
         local -a exams=()
         local pick i update_status
         mapfile -t exams < <(list_exams)
-        [ "${#exams[@]}" -gt 0 ] || die "não foram encontrados exames em '$EXAM_ROOT'"
+        [ "${#exams[@]}" -gt 0 ] || die "$(tr_text 'não foram encontrados exames em' 'no exams were found in') '$EXAM_ROOT'"
         check_for_updates
 
         while true; do
@@ -223,52 +364,52 @@ choose_exam() {
             printf '%s┌────────────────────────────────────────┐%s\n' "$CYA" "$RST"
             printf '%s│%s           %s           %s│%s\n' "$CYA" "$YEL" 'EXAM SHELL - 42' "$CYA" "$RST"
             printf '%s└────────────────────────────────────────┘%s\n' "$CYA" "$RST"
-            printf '\n Selecione um exame para começar:\n\n'
+            printf '\n %s\n\n' "$(ui choose_exam)"
             i=1
             for e in "${exams[@]}"; do printf '  %s[%02d]%s %s\n' "$GRN" "$i" "$RST" "$e"; i=$((i+1)); done
-            printf '\n  %s[ m]%s Modo Real %s(todos em sequência)%s\n' "$MAG" "$RST" "$DIM" "$RST"
-            printf '  %s[ r]%s Exame aleatório\n' "$MAG" "$RST"
-            printf '  %s[ s]%s Selecionar nível/exercício\n' "$MAG" "$RST"
-            printf '  %s[ b]%s Atualizar apenas banco de exercícios\n' "$MAG" "$RST"
+            printf '\n  %s[ m]%s %s\n' "$MAG" "$RST" "$(ui real_mode)"
+            printf '  %s[ r]%s %s\n' "$MAG" "$RST" "$(ui random_exam)"
+            printf '  %s[ s]%s %s\n' "$MAG" "$RST" "$(ui choose_exercise)"
+            printf '  %s[ c]%s %s\n' "$MAG" "$RST" "$(ui settings)"
             case "$UPDATE_STATE" in
                 available)
-                    printf '  %s[ u]%s Atualizar pelo GitHub (%s commits novos)\n' "$MAG" "$RST" "$UPDATE_COUNT"
+                    printf '  %s[ u]%s %s\n' "$MAG" "$RST" "$(ui update_available "$UPDATE_COUNT")"
                     ;;
                 current)
-                    printf '  %s[ u]%s Atualizações: em dia\n' "$MAG" "$RST"
+                    printf '  %s[ u]%s %s\n' "$MAG" "$RST" "$(ui up_to_date)"
                     ;;
                 diverged)
-                    printf '  %s[ u]%s Atualizar pelo GitHub (branches divergentes)\n' "$YEL" "$RST"
+                    printf '  %s[ u]%s %s\n' "$YEL" "$RST" "$(ui update_diverged)"
                     ;;
                 *)
-                    printf '  %s[ u]%s Verificar atualizações (GitHub indisponível)\n' "$YEL" "$RST"
+                    printf '  %s[ u]%s %s\n' "$YEL" "$RST" "$(ui check_updates)"
                     ;;
             esac
-            printf '  %s[ q]%s Sair do programa\n\n' "$RED" "$RST"
+            printf '  %s[ q]%s %s\n\n' "$RED" "$RST" "$(ui quit)"
             printf '%s ❯ %s' "$CYA" "$RST"
             if ! read -r pick; then
                 EXIT_REQUESTED=1
-                printf "\nEntrada terminada. Até logo.\n"
+                printf "\n%s\n" "$(tr_text 'Entrada terminada. Até logo.' 'Input ended. Goodbye.')"
                 return 0
             fi
 
             case "$pick" in
                 q)
                     EXIT_REQUESTED=1
-                    echo "Até logo."
+                    echo "$(tr_text 'Até logo.' 'Goodbye.')"
                     return 0
+                    ;;
+                c)
+                    settings_menu
                     ;;
                 u)
                     update_project
                     update_status=$?
                     if [ "$update_status" -eq 2 ]; then
-                        echo "Reinicie o programa para usar a versão atualizada."
+                        echo "$(tr_text 'Reinicie o programa para usar a versão atualizada.' 'Restart the program to use the updated version.')"
                         EXIT_REQUESTED=1
                         return 0
                     fi
-                    ;;
-                b)
-                    update_exercise_bank
                     ;;
                 r)
                     EXAM_CHOICE="${exams[$((RANDOM % ${#exams[@]}))]}"
@@ -288,14 +429,14 @@ choose_exam() {
                         EXAM_CHOICE="${exams[$((pick-1))]}"
                         break
                     fi
-                    printf "${YEL}Opção inválida: '%s'. Escolha uma das opções do menu.\n\n${RST}" "$pick"
+                    printf '%s\n\n' "${YEL}$(tr_text 'Opção inválida:' 'Invalid option:') '$pick'. $(tr_text 'Escolha uma das opções do menu.' 'Choose one of the menu options.')${RST}"
                     ;;
             esac
         done
     elif [ "$EXAM_CHOICE" = "random" ]; then
         local -a exams=()
         mapfile -t exams < <(list_exams)
-        [ "${#exams[@]}" -gt 0 ] || die "não foram encontrados exames em '$EXAM_ROOT'"
+        [ "${#exams[@]}" -gt 0 ] || die "$(tr_text 'não foram encontrados exames em' 'no exams were found in') '$EXAM_ROOT'"
         EXAM_CHOICE="${exams[$((RANDOM % ${#exams[@]}))]}"
     fi
 
@@ -303,7 +444,7 @@ choose_exam() {
         REAL_MODE=1
         return
     fi
-    [ -d "$EXAM_ROOT/$EXAM_CHOICE" ] || die "exam '$EXAM_CHOICE' not found under $EXAM_ROOT"
+    [ -d "$EXAM_ROOT/$EXAM_CHOICE" ] || die "$(tr_text 'exam' 'exam') '$EXAM_CHOICE' $(tr_text 'não encontrado em' 'not found under') $EXAM_ROOT"
 }
 
 UPDATE_STATE="unknown"
@@ -335,114 +476,36 @@ check_for_updates() {
 update_project() {
     local remote_url branch
     if ! command -v git >/dev/null 2>&1; then
-        echo "${RED}Não foi possível atualizar: o Git não está instalado.${RST}"
+        echo "${RED}$(tr_text 'Não foi possível atualizar: o Git não está instalado.' 'Cannot update: Git is not installed.')${RST}"
         return 1
     fi
     if ! git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        echo "${RED}Não foi possível atualizar: esta cópia não está dentro de um repositório Git.${RST}"
+        echo "${RED}$(tr_text 'Não foi possível atualizar: esta cópia não está dentro de um repositório Git.' 'Cannot update: this copy is not inside a Git repository.')${RST}"
         return 1
     fi
     remote_url="$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null)" || {
-        echo "${RED}Não foi possível atualizar: o remoto 'origin' não está configurado.${RST}"
+        echo "${RED}$(tr_text 'Não foi possível atualizar: o remoto origin não está configurado.' 'Cannot update: the origin remote is not configured.')${RST}"
         return 1
     }
     case "$remote_url" in
         https://github.com/*|http://github.com/*|git@github.com:*|ssh://git@github.com/*) ;;
-        *) echo "${RED}Não foi possível atualizar: 'origin' não aponta para GitHub.${RST}"
+        *) echo "${RED}$(tr_text 'Não foi possível atualizar: origin não aponta para GitHub.' 'Cannot update: origin does not point to GitHub.')${RST}"
            return 1 ;;
     esac
     branch="$(git -C "$SCRIPT_DIR" symbolic-ref --quiet --short HEAD)" || {
-        echo "${RED}Não foi possível atualizar: HEAD não aponta para um branch.${RST}"
+        echo "${RED}$(tr_text 'Não foi possível atualizar: HEAD não aponta para um branch.' 'Cannot update: HEAD is not on a branch.')${RST}"
         return 1
     }
 
-    echo "A sincronizar com o GitHub..."
+    echo "$(tr_text 'A sincronizar com o GitHub...' 'Syncing with GitHub...')"
     if ! GIT_TERMINAL_PROMPT=0 timeout 60s git -C "$SCRIPT_DIR" pull --ff-only origin "$branch"; then
-        echo "${RED}A atualização falhou. As alterações locais podem conflitar com as do GitHub; confira 'git status' e resolva os conflitos antes de tentar novamente.${RST}"
+        echo "${RED}$(tr_text 'A atualização falhou. As alterações locais podem conflitar com as do GitHub; confira git status e resolva os conflitos antes de tentar novamente.' 'Update failed. Local changes may conflict with GitHub; check git status and resolve conflicts before trying again.')${RST}"
         return 1
     fi
-    echo "${GRN}Projeto sincronizado com o GitHub.${RST}"
+    echo "${GRN}$(tr_text 'Projeto sincronizado com o GitHub.' 'Project synced with GitHub.')${RST}"
     return 2
 }
 
-update_exercise_bank() {
-    local bank_root clone_dir stage_dir backup_dir bank_commit exam
-    local -a expected_exams=(exam-00 exam-01 exam-02 final-exam)
-
-    if ! command -v git >/dev/null 2>&1 || ! command -v mktemp >/dev/null 2>&1; then
-        echo "${RED}Não foi possível atualizar o banco: instale git e mktemp.${RST}"
-        return 1
-    fi
-    bank_root="$(cd -- "$EXAM_ROOT" 2>/dev/null && pwd -P)" || {
-        echo "${RED}Não foi possível localizar o banco em '$EXAM_ROOT'.${RST}"
-        return 1
-    }
-    if [ "$bank_root" != "$SCRIPT_DIR/exam-practice" ]; then
-        echo "${YEL}A atualização isolada está disponível apenas para o banco incluído no projeto. O banco configurado está em '$bank_root'.${RST}"
-        return 1
-    fi
-    if [ -n "$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=all --ignored -- exam-practice)" ]; then
-        echo "${YEL}Atualização cancelada: há alterações locais em exam-practice. Guarde-as ou descarte-as antes de atualizar o banco.${RST}"
-        return 1
-    fi
-
-    clone_dir="$(mktemp -d "${TMPDIR:-/tmp}/examshell-bank.XXXXXX")" || {
-        echo "${RED}Não foi possível criar uma pasta temporária para a atualização.${RST}"
-        return 1
-    }
-    stage_dir="$SCRIPT_DIR/.exam-practice-update-$$"
-    backup_dir="$SCRIPT_DIR/.exam-practice-backup-$$"
-    if [ -e "$stage_dir" ] || [ -e "$backup_dir" ]; then
-        rm -rf -- "$clone_dir"
-        echo "${RED}Há uma pasta temporária de atualização existente; remova-a antes de tentar novamente.${RST}"
-        return 1
-    fi
-
-    echo "A baixar apenas exam-practice de GTitonele/42porto-piscine-17..."
-    if ! GIT_TERMINAL_PROMPT=0 timeout 120s git clone --quiet --depth 1 --filter=blob:none --sparse --branch main \
-        https://github.com/GTitonele/42porto-piscine-17.git "$clone_dir/source" ||
-       ! GIT_TERMINAL_PROMPT=0 timeout 60s git -C "$clone_dir/source" sparse-checkout set exam-practice; then
-        rm -rf -- "$clone_dir" "$stage_dir"
-        echo "${RED}Não foi possível obter o banco do GitHub. Verifique a ligação e tente novamente.${RST}"
-        return 1
-    fi
-
-    for exam in "${expected_exams[@]}"; do
-        if [ ! -d "$clone_dir/source/exam-practice/$exam" ] ||
-           [ -z "$(find "$clone_dir/source/exam-practice/$exam" -type f -name '*.subject.txt' -print -quit)" ]; then
-            rm -rf -- "$clone_dir" "$stage_dir"
-            echo "${RED}O banco obtido está incompleto: falta $exam ou os seus enunciados.${RST}"
-            return 1
-        fi
-    done
-    bank_commit="$(git -C "$clone_dir/source" rev-parse --short HEAD)"
-
-    if ! python3 - "$clone_dir/source/exam-practice" "$stage_dir" <<'PY_COPY'
-import shutil
-import sys
-shutil.copytree(sys.argv[1], sys.argv[2])
-PY_COPY
-    then
-        rm -rf -- "$clone_dir" "$stage_dir"
-        echo "${RED}Não foi possível preparar os novos ficheiros do banco.${RST}"
-        return 1
-    fi
-    if ! mv -- "$bank_root" "$backup_dir"; then
-        rm -rf -- "$clone_dir" "$stage_dir"
-        echo "${RED}Não foi possível guardar temporariamente o banco atual.${RST}"
-        return 1
-    fi
-    if ! mv -- "$stage_dir" "$bank_root"; then
-        mv -- "$backup_dir" "$bank_root"
-        rm -rf -- "$clone_dir" "$stage_dir"
-        echo "${RED}Não foi possível instalar o novo banco; o banco anterior foi restaurado.${RST}"
-        return 1
-    fi
-
-    rm -rf -- "$backup_dir" "$clone_dir"
-    echo "${GRN}Banco de exercícios atualizado (origem: $bank_commit). O código do programa não foi alterado.${RST}"
-    return 0
-}
 
 default_duration_for() {
     case "$1" in
@@ -501,60 +564,73 @@ select_manual_exercise() {
     local selection exam level exercise i
 
     while true; do
-        printf '\nSelecione o exame para praticar (q para voltar):\n'
+        clear_terminal
+        section "$(tr_text 'Selecionar exame' 'Select an exam')"
         for i in "${!exam_names[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "${exam_names[$i]}"; done
+        printf '  [q] %s\n' "$(ui back)"
         printf '  ❯ '
-        IFS= read -r selection || return 1
-        [ "$selection" = "q" ] && return 1
+        IFS= read -r selection || { clear_terminal; return 1; }
+        if [ "$selection" = "q" ]; then clear_terminal; return 1; fi
         if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#exam_names[@]}" ]; then
             exam="${exam_names[$((selection-1))]}"
-            break
-        fi
-        printf '%sOpção inválida. Escolha um número da lista ou q para voltar.%s\n' "$YEL" "$RST"
-    done
+            levels=()
+            while IFS= read -r -d '' level; do levels+=("$level"); done < <(get_levels_for_exam "$exam")
 
-    levels=()
-    while IFS= read -r -d '' level; do levels+=("$level"); done < <(get_levels_for_exam "$exam")
-    [ "${#levels[@]}" -gt 0 ] || { echo "Não há níveis disponíveis para $exam."; return 1; }
-    while true; do
-        printf '\nNíveis de %s (q para voltar):\n' "$exam"
-        for i in "${!levels[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "$(basename "${levels[$i]}")"; done
-        printf '  ❯ '
-        IFS= read -r selection || return 1
-        [ "$selection" = "q" ] && return 1
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#levels[@]}" ]; then
-            level="${levels[$((selection-1))]}"
-            break
-        fi
-        printf '%sOpção inválida. Escolha um número da lista ou q para voltar.%s\n' "$YEL" "$RST"
-    done
+            while true; do
+                clear_terminal
+                section "$(tr_text 'Níveis de' 'Levels for') $exam"
+                if [ "${#levels[@]}" -eq 0 ]; then
+                    echo "$(tr_text 'Não há níveis disponíveis para este exame.' 'No levels are available for this exam.')"
+                fi
+                for i in "${!levels[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "$(basename "${levels[$i]}")"; done
+                printf '  [q] %s\n' "$(ui back)"
+                printf '  ❯ '
+                IFS= read -r selection || { clear_terminal; return 1; }
+                if [ "$selection" = "q" ]; then clear_terminal; continue 2; fi
+                if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#levels[@]}" ]; then
+                    level="${levels[$((selection-1))]}"
+                    exercises=()
+                    while IFS= read -r -d '' exercise; do exercises+=("$exercise"); done < <(
+                        find "$level" -type f -name '*.subject.txt' -print0 | sort -z
+                    )
+                    exercise=""
 
-    exercises=()
-    while IFS= read -r -d '' exercise; do exercises+=("$exercise"); done < <(
-        find "$level" -type f -name '*.subject.txt' -print0 | sort -z
-    )
-    [ "${#exercises[@]}" -gt 0 ] || { echo "Não há exercícios neste nível."; return 1; }
-    while true; do
-        printf '\nExercícios de %s (r sorteia neste nível, q para voltar):\n' "$(basename "$level")"
-        for i in "${!exercises[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "$(basename "${exercises[$i]}" .subject.txt)"; done
-        printf '  ❯ '
-        IFS= read -r selection || return 1
-        if [ "$selection" = "q" ]; then return 1; fi
-        if [ "$selection" = "r" ]; then
-            exercise="${exercises[$((RANDOM % ${#exercises[@]}))]}"
-            break
-        fi
-        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#exercises[@]}" ]; then
-            exercise="${exercises[$((selection-1))]}"
-            break
-        fi
-        printf '%sOpção inválida. Escolha um número, r ou q para voltar.%s\n' "$YEL" "$RST"
-    done
+                    while true; do
+                        clear_terminal
+                        section "$(tr_text 'Exercícios de' 'Exercises in') $(basename "$level")"
+                        if [ "${#exercises[@]}" -eq 0 ]; then
+                            echo "$(tr_text 'Não há exercícios neste nível.' 'There are no exercises at this level.')"
+                        fi
+                        for i in "${!exercises[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "$(basename "${exercises[$i]}" .subject.txt)"; done
+                        if [ "${#exercises[@]}" -gt 0 ]; then
+                            printf '  [r] %s\n' "$(tr_text 'Sortear neste nível' 'Pick randomly from this level')"
+                        fi
+                        printf '  [q] %s\n' "$(ui back)"
+                        printf '  ❯ '
+                        IFS= read -r selection || { clear_terminal; return 1; }
+                        if [ "$selection" = "q" ]; then clear_terminal; continue 2; fi
+                        if [ "$selection" = "r" ] && [ "${#exercises[@]}" -gt 0 ]; then
+                            exercise="${exercises[$((RANDOM % ${#exercises[@]}))]}"
+                            break
+                        fi
+                        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#exercises[@]}" ]; then
+                            exercise="${exercises[$((selection-1))]}"
+                            break
+                        fi
+                        printf '%s%s%s\n' "$YEL" "$(tr_text 'Opção inválida. Escolha um número, r ou q para voltar.' 'Invalid option. Choose a number, r, or q to go back.')" "$RST"
+                    done
+                    break
+                fi
+                printf '%s%s%s\n' "$YEL" "$(tr_text 'Opção inválida. Escolha um número da lista ou q para voltar.' 'Invalid option. Choose a number from the list or q to go back.')" "$RST"
+            done
 
-    EXAM_CHOICE="$exam"
-    SELECTED_LEVEL="$level"
-    SELECTED_EXERCISE="$exercise"
-    return 0
+            EXAM_CHOICE="$exam"
+            SELECTED_LEVEL="$level"
+            SELECTED_EXERCISE="$exercise"
+            return 0
+        fi
+        printf '%s%s%s\n' "$YEL" "$(tr_text 'Opção inválida. Escolha um número da lista ou q para voltar.' 'Invalid option. Choose a number from the list or q to go back.')" "$RST"
+    done
 }
 
 # ---------------------------------------------------------------------------
@@ -566,10 +642,16 @@ subj_field() {
 }
 
 show_subject() {
-    printf '%sEXERCÍCIO · %s%s\n' "$BOLD$CYA" "$(basename "$1" .subject.txt)" "$RST"
+    printf '%s%s · %s%s\n' "$BOLD$CYA" "$(ui exercise)" "$(basename "$1" .subject.txt)" "$RST"
     hr
     cat "$1"
     hr
+}
+
+clear_terminal() {
+    if [[ -t 1 ]]; then
+        printf '\033[2J\033[H'
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -583,6 +665,8 @@ start_timer() {
         EXAM_END_EPOCH=$(( $(date +%s) + DURATION_MIN * 60 ))
     fi
 }
+
+TIMER_STARTED=0
 
 seconds_left() {
     [ "$DURATION_MIN" -eq 0 ] && { echo -1; return; }
@@ -598,27 +682,34 @@ fmt_secs() {
 }
 
 time_is_up() {
-    [ "$DURATION_MIN" -eq 0 ] && return 1
+    if [ "$DURATION_MIN" -eq 0 ] || [ "$TIMER_STARTED" -eq 0 ]; then
+        return 1
+    fi
     [ "$(seconds_left)" -le 0 ]
 }
 
 timer_status() {
+    if [ "$TIMER_STARTED" -eq 0 ]; then
+        printf '%s' "$(ui paused)"
+        return
+    fi
     local left
     left="$(seconds_left)"
     if [ "$left" -lt 0 ]; then
-        printf 'Tempo: sem limite'
+        printf '%s' "$(ui unlimited)"
     elif [ "$left" -le 300 ]; then
-        printf '%sTempo: %s · AVISO: restam 5 min ou menos%s' "$YEL$BOLD" "$(fmt_secs "$left")" "$RST"
+        printf '%s%s%s' "$YEL$BOLD" "$(ui time_warning "$(fmt_secs "$left")")" "$RST"
     else
-        printf 'Tempo: %s' "$(fmt_secs "$left")"
+        printf '%s' "$(ui time "$(fmt_secs "$left")")"
     fi
 }
 
-# Read a line while refreshing the countdown once per second in an interactive
-# terminal. The non-interactive path keeps normal shell input behavior.
+# Read a line while checking the countdown once per second. The timer display
+# is rendered only with the exercise menu, never refreshed while waiting for
+# input.
 read_exercise_line() {
     local prompt="$1" result_var="$2"
-    local buffer="" char rc
+    local buffer="" char rc prompt_shown=0
 
     if [ "$DURATION_MIN" -eq 0 ] || [[ ! -t 0 || ! -t 1 ]]; then
         IFS= read -r -p "$prompt" buffer || return 1
@@ -630,7 +721,10 @@ read_exercise_line() {
         local left
         left="$(seconds_left)"
         [ "$left" -gt 0 ] || return 2
-        printf '\r\033[K%s · %s%s' "$(timer_status)" "$prompt" "$buffer"
+        if [ "$prompt_shown" -eq 0 ]; then
+            printf '%s' "$prompt"
+            prompt_shown=1
+        fi
         IFS= read -r -s -n 1 -t 1 char
         rc=$?
         if [ "$rc" -gt 128 ]; then
@@ -647,9 +741,13 @@ read_exercise_line() {
                 return 0
                 ;;
             $'\177'|$'\b')
-                buffer="${buffer%?}"
+                if [ -n "$buffer" ]; then
+                    buffer="${buffer%?}"
+                    printf '\b \b'
+                fi
                 ;;
             $'\025')
+                printf '\r\033[K%s' "$prompt"
                 buffer=""
                 ;;
             $'\004')
@@ -660,6 +758,7 @@ read_exercise_line() {
                 ;;
             *)
                 buffer+="$char"
+                printf '%s' "$char"
                 ;;
         esac
     done
@@ -679,7 +778,7 @@ check_allowed_functions() {
 
     local nm_output undefined
     if ! nm_output=$(nm --undefined-only "$binary" 2>/dev/null); then
-        echo "${RED}Não foi possível verificar as funções usadas em '$binary'.${RST}"
+        echo "${RED}$(tr_text 'Não foi possível verificar as funções usadas em' 'Could not check functions used in') '$binary'.${RST}"
         return 1
     fi
     undefined=$(printf '%s\n' "$nm_output" | awk '{print $NF}')
@@ -699,11 +798,11 @@ check_allowed_functions() {
     done
 
     if [ "${#violations[@]}" -gt 0 ]; then
-        echo "${RED}${BOLD}Função(ões) não permitida(s):${RST} ${violations[*]}"
-        echo "${DIM}Permitidas: ${allowed_raw:-nenhuma}${RST}"
+        echo "${RED}${BOLD}$(tr_text 'Função(ões) não permitida(s):' 'Disallowed function(s):')${RST} ${violations[*]}"
+        echo "${DIM}$(tr_text 'Permitidas:' 'Allowed:') ${allowed_raw:-$(tr_text 'nenhuma' 'none')}${RST}"
         return 1
     fi
-    echo "${GRN}Verificação de funções permitidas: OK${RST}"
+    echo "${GRN}$(tr_text 'Verificação de funções permitidas: OK' 'Allowed functions check: OK')${RST}"
     return 0
 }
 
@@ -803,25 +902,25 @@ run_auto_tests() {
         if [ "$got_t" = "$exp_t" ] && [ "$test_rc" -eq 0 ]; then
             passed=$((passed+1))
         elif [ -z "$first_fail" ]; then
-            first_fail="teste $i: \`$inv\`"$'\n'"codigo de saida: $test_rc"$'\n'"esperado:"$'\n'"$exp_t"$'\n'"obtido:"$'\n'"$got_t"
+            first_fail="$(tr_text 'teste' 'test') $i: \`$inv\`"$'\n'"$(tr_text 'código de saída:' 'exit code:') $test_rc"$'\n'"$(tr_text 'esperado:' 'expected:')"$'\n'"$exp_t"$'\n'"$(tr_text 'obtido:' 'got:')"$'\n'"$got_t"
         fi
     done
 
     if [ "$total" -eq 0 ]; then
-        echo "${YEL}Este enunciado não tem exemplos que possam ser testados automaticamente.${RST}"
-        echo "Confirme a solução com [r] Executar; avance depois com [n] Próximo."
+        echo "${YEL}$(tr_text 'Este enunciado não tem exemplos que possam ser testados automaticamente.' 'This subject has no examples that can be tested automatically.')${RST}"
+        echo "$(tr_text 'Confirme a solução com [r] Executar; avance depois com [n] Próximo.' 'Check your solution with [r] Run, then continue with [n] Next.')"
         AUTO_TESTS_OK=0
         return
     fi
 
     if [ "$passed" -eq "$total" ]; then
-        echo "${GRN}Testes dos exemplos: $passed/$total passaram.${RST}"
-        echo "${DIM}Verificação parcial; não substitui a correção oficial.${RST}"
+        echo "${GRN}$(tr_text 'Testes dos exemplos:' 'Example tests:') $passed/$total $(tr_text 'passaram.' 'passed.')${RST}"
+        echo "${DIM}$(tr_text 'Verificação parcial; não substitui a correção oficial.' 'Partial check; this does not replace the official evaluation.')${RST}"
         AUTO_TESTS_OK=1
     else
-        echo "${RED}${BOLD}Testes dos exemplos: $passed/$total passaram.${RST}"
+        echo "${RED}${BOLD}$(tr_text 'Testes dos exemplos:' 'Example tests:') $passed/$total $(tr_text 'passaram.' 'passed.')${RST}"
         echo "${DIM}$first_fail${RST}"
-        echo "${DIM}Verificação parcial; não substitui a correção oficial.${RST}"
+        echo "${DIM}$(tr_text 'Verificação parcial; não substitui a correção oficial.' 'Partial check; this does not replace the official evaluation.')${RST}"
         AUTO_TESTS_OK=0
     fi
 }
@@ -879,23 +978,28 @@ EOF
     local bin="$work/a.out"
 
     while true; do
-        time_is_up && { echo "${RED}${BOLD}Tempo esgotado.${RST}"; return 2; }
+        time_is_up && { echo "${RED}${BOLD}$(tr_text 'Tempo esgotado.' 'Time is up.')${RST}"; return 2; }
         echo
         hr
         printf '%s%s%s  ·  %s  ·  %s\n' "$BOLD$CYA" "$level_label" "$RST" "${name:-?}" "$(timer_status)"
-        echo "[e] Editar   [l] Carregar   [c] Compilar   [t] Testar"
-        echo "[r] Executar [s] Enunciado  [n] Próximo    [k] Saltar   [q] Sair"
+        printf '[e] %s   [l] %s   [c] %s   [t] %s\n' "$(ui edit)" "$(ui load)" "$(ui compile)" "$(ui test)"
+        printf '[r] %s [s] %s [n] %s [k] %s [q] %s\n' "$(ui run)" "$(ui subject)" "$(ui next)" "$(ui skip)" "$(ui quit)"
+        if [ "$TIMER_STARTED" -eq 0 ]; then
+            TIMER_STARTED=1
+            start_timer
+        fi
         local input_status=0
-        read_exercise_line "examshell › " cmd || input_status=$?
+        read_exercise_line "$(ui select_prompt)" cmd || input_status=$?
         if [ "$input_status" -eq 1 ]; then
             echo
-            echo "${YEL}Entrada encerrada; a sessão será finalizada.${RST}"
+            echo "${YEL}$(tr_text 'Entrada encerrada; a sessão será finalizada.' 'Input ended; the session will close.')${RST}"
             return 3
         elif [ "$input_status" -eq 2 ]; then
-            echo "${RED}${BOLD}Tempo esgotado.${RST}"
+            echo "${RED}${BOLD}$(tr_text 'Tempo esgotado.' 'Time is up.')${RST}"
             return 2
         fi
-        time_is_up && { echo "${RED}${BOLD}Tempo esgotado.${RST}"; return 2; }
+        time_is_up && { echo "${RED}${BOLD}$(tr_text 'Tempo esgotado.' 'Time is up.')${RST}"; return 2; }
+        clear_terminal
 
         case "$cmd" in
             e|edit)
@@ -908,9 +1012,9 @@ EOF
                 ;;
             l|load)
                 local src
-                read_exercise_line "Caminho do ficheiro para carregar: " src || src=""
+                read_exercise_line "$(tr_text 'Caminho do ficheiro para carregar: ' 'File path to load: ')" src || src=""
                 if [ -z "$src" ] || [ ! -f "$src" ]; then
-                    echo "${YEL}Ficheiro não encontrado: $src${RST}"
+                    echo "${YEL}$(tr_text 'Ficheiro não encontrado:' 'File not found:') $src${RST}"
                 else
                     cp -- "$src" "$work/$first_file"
                     compiled_ok=0
@@ -918,7 +1022,7 @@ EOF
                     function_tested=0
                     AUTO_TESTS_OK=0
                     rm -f -- "$bin"
-                    echo "${GRN}Solução carregada. Use [c] Compilar para continuar.${RST}"
+                    echo "${GRN}$(tr_text 'Solução carregada. Use [c] Compilar para continuar.' 'Solution loaded. Use [c] Compile to continue.')${RST}"
                 fi
                 ;;
             c|compile)
@@ -964,23 +1068,23 @@ EOF
                             function_tested=1
                             compiled_ok=1
                             if function_output=$(timeout 5 "$bin" 2>&1); then
-                                echo "${GRN}Testes da função '$name': passaram.${RST}"
-                                echo "${DIM}Verificação parcial; não substitui a correção oficial.${RST}"
+                                echo "${GRN}$(tr_text 'Testes da função' 'Function tests for') '$name': $(tr_text 'passaram.' 'passed.')${RST}"
+                                echo "${DIM}$(tr_text 'Verificação parcial; não substitui a correção oficial.' 'Partial check; this does not replace the official evaluation.')${RST}"
                                 AUTO_TESTS_OK=1
                             else
-                                echo "${RED}Testes da função '$name': falharam.${RST}"
+                                echo "${RED}$(tr_text 'Testes da função' 'Function tests for') '$name': $(tr_text 'falharam.' 'failed.')${RST}"
                                 [ -n "$function_output" ] && echo "$function_output"
                             fi
                         else
-                            echo "${RED}Não foi possível ligar o executável de teste da função:${RST}"
+                            echo "${RED}$(tr_text 'Não foi possível ligar o executável de teste da função:' 'Could not link the function test executable:')${RST}"
                             cat "$work/compile.log"
                         fi
                     else
-                        echo "${RED}Não foi possível compilar a função ou os testes:${RST}"
+                        echo "${RED}$(tr_text 'Não foi possível compilar a função ou os testes:' 'Could not compile the function or its tests:')${RST}"
                         cat "$work/compile.log"
                     fi
                 elif "${COMPILER[@]}" $CFLAGS "${srcs[@]}" -o "$bin" 2>"$work/compile.log"; then
-                    echo "${GRN}Compilação concluída.${RST}"
+                    echo "${GRN}$(tr_text 'Compilação concluída.' 'Compilation complete.')${RST}"
                     if check_allowed_functions "$bin" "$allowed"; then
                         run_auto_tests "$subject_file" "$name" "$work" "$bin"
                         compiled_ok=1
@@ -1009,17 +1113,17 @@ EOF
                         done
                     fi
                     if [ "$failed_object" -eq 0 ] && [ "$object_index" -gt 0 ]; then
-                        echo "${GRN}Os ficheiros foram compilados.${RST}"
-                        echo "${DIM}Ainda não há testes automáticos para a função '$name'.${RST}"
+                        echo "${GRN}$(tr_text 'Os ficheiros foram compilados.' 'Files compiled.')${RST}"
+                        echo "${DIM}$(tr_text 'Ainda não há testes automáticos para a função' 'There are no automated tests for function') '$name'.${RST}"
                         compiled_ok=1
                         object_only=1
                         AUTO_TESTS_OK=0
                     else
-                        echo "${RED}Falha na compilação:${RST}"
+                        echo "${RED}$(tr_text 'Falha na compilação:' 'Compilation failed:')${RST}"
                         cat "$work/compile.log"
                     fi
                 else
-                    echo "${RED}Falha na compilação:${RST}"
+                    echo "${RED}$(tr_text 'Falha na compilação:' 'Compilation failed:')${RST}"
                     cat "$work/compile.log"
                 fi
                 ;;
@@ -1027,38 +1131,38 @@ EOF
                 if [ "$function_tested" -eq 1 ] && [ -x "$bin" ]; then
                     local function_output
                     if function_output=$(timeout 5 "$bin" 2>&1); then
-                        echo "${GRN}Testes da função '$name': passaram.${RST}"
-                        echo "${DIM}Verificação parcial; não substitui a correção oficial.${RST}"
+                        echo "${GRN}$(tr_text 'Testes da função' 'Function tests for') '$name': $(tr_text 'passaram.' 'passed.')${RST}"
+                        echo "${DIM}$(tr_text 'Verificação parcial; não substitui a correção oficial.' 'Partial check; this does not replace the official evaluation.')${RST}"
                         AUTO_TESTS_OK=1
                     else
-                        echo "${RED}Testes da função '$name': falharam.${RST}"
+                        echo "${RED}$(tr_text 'Testes da função' 'Function tests for') '$name': $(tr_text 'falharam.' 'failed.')${RST}"
                         [ -n "$function_output" ] && echo "$function_output"
                         AUTO_TESTS_OK=0
                     fi
                 elif [ "$object_only" -eq 1 ]; then
-                    echo "${YEL}Esta função não gera um programa executável para testar diretamente.${RST}"
+                    echo "${YEL}$(tr_text 'Esta função não gera um programa executável para testar diretamente.' 'This function does not produce an executable that can be tested directly.')${RST}"
                 elif [ -x "$bin" ]; then
                     run_auto_tests "$subject_file" "$name" "$work" "$bin"
                 else
-                    echo "${YEL}Ainda não há programa compilado. Use [c] Compilar.${RST}"
+                    echo "${YEL}$(tr_text 'Ainda não há programa compilado. Use [c] Compilar.' 'There is no compiled program yet. Use [c] Compile.')${RST}"
                 fi
                 ;;
             r|run)
                 if [ "$object_only" -eq 1 ] || [ "$function_tested" -eq 1 ]; then
-                    echo "${YEL}Esta função não gera um programa executável para iniciar.${RST}"
+                    echo "${YEL}$(tr_text 'Esta função não gera um programa executável para iniciar.' 'This function does not produce an executable that can be run.')${RST}"
                 elif [ -x "$bin" ]; then
-                    echo "${DIM}A executar — Ctrl-C interrompe o programa.${RST}"
+                    echo "${DIM}$(tr_text 'A executar — Ctrl-C interrompe o programa.' 'Running — Ctrl-C stops the program.')${RST}"
                     local -a args=()
                     local args_line=""
-                    read_exercise_line "Argumentos (opcional): " args_line || args_line=""
+                    read_exercise_line "$(tr_text 'Argumentos (opcional): ' 'Arguments (optional): ')" args_line || args_line=""
                     local -a args=()
                     read -r -a args <<< "$args_line"
                     "$bin" "${args[@]}"
                     local run_rc=$?
                     echo
-                    echo "${DIM}Código de saída: $run_rc${RST}"
+                    echo "${DIM}$(tr_text 'Código de saída:' 'Exit code:') $run_rc${RST}"
                 else
-                    echo "${YEL}Ainda não há programa compilado. Use [c] Compilar.${RST}"
+                    echo "${YEL}$(tr_text 'Ainda não há programa compilado. Use [c] Compilar.' 'There is no compiled program yet. Use [c] Compile.')${RST}"
                 fi
                 ;;
             s|subject)
@@ -1068,7 +1172,7 @@ EOF
                 if [ "$compiled_ok" -eq 1 ] && [ "$AUTO_TESTS_OK" -eq 1 ]; then
                     return 0
                 else
-                    read_exercise_line "A compilação ou os testes ainda falham. Avançar mesmo assim? [s/N] " y || y=""
+                    read_exercise_line "$(tr_text 'A compilação ou os testes ainda falham. Avançar mesmo assim? [s/N] ' 'Compilation or tests are still failing. Continue anyway? [y/N] ')" y || y=""
                     [[ "$y" == [sS] || "$y" == [yY] ]] && return 0
                 fi
                 ;;
@@ -1079,7 +1183,7 @@ EOF
                 return 3
                 ;;
             *)
-                echo "${YEL}Comando desconhecido. Escolha uma opção do menu.${RST}"
+                echo "${YEL}$(tr_text 'Comando desconhecido. Escolha uma opção do menu.' 'Unknown command. Choose an option from the menu.')${RST}"
                 ;;
         esac
     done
@@ -1089,6 +1193,7 @@ EOF
 # Main
 # ---------------------------------------------------------------------------
 main() {
+    load_language
     parse_args "$@"
     [ "${#COMPILER[@]}" -gt 0 ] || die "CC must name a compiler"
     run_preflight || return 1
@@ -1108,19 +1213,27 @@ main() {
     mkdir -p "$session_dir"
     local logfile="$session_dir/session.log"
 
-    section "EXAMSHELL · TREINO DE EXAMES 42"
+    section "$(ui title)"
     if [ "$REAL_MODE" -eq 1 ]; then
-        printf '  Modo       %s\n' "Modo Real · ${REAL_ORDER[*]}"
+        if [ "$LANGUAGE" = en ]; then
+            printf '  Mode       %s\n' "Real Mode · ${REAL_ORDER[*]}"
+        else
+            printf '  Modo       %s\n' "Modo Real · ${REAL_ORDER[*]}"
+        fi
     else
-        printf '  Exame      %s\n' "$EXAM_CHOICE"
+        printf '  %s      %s\n' "$([ "$LANGUAGE" = en ] && printf 'Exam' || printf 'Exame')" "$EXAM_CHOICE"
     fi
-    printf '  Duração    %s\n' "$([ "$DURATION_MIN" -eq 0 ] && echo "sem limite" || echo "${DURATION_MIN} min")"
-    printf '  Sessão     %s\n' "$session_dir"
+    printf '  %s    %s\n' "$([ "$LANGUAGE" = en ] && printf 'Duration' || printf 'Duração')" "$([ "$DURATION_MIN" -eq 0 ] && { [ "$LANGUAGE" = en ] && echo unlimited || echo 'sem limite'; } || echo "${DURATION_MIN} min")"
+    printf '  %s     %s\n' "$(tr_text 'Sessão' 'Session')" "$session_dir"
     echo
-    echo "  Sem rede, navegador ou páginas de manual durante o exame."
-    read -rp "  Pressione ENTER para começar › " _
+    if [ "$LANGUAGE" = en ]; then
+        echo "  No network, browser, or man pages during the exam."
+        read -rp "  Press ENTER to begin › " _
+    else
+        echo "  Sem rede, navegador ou páginas de manual durante o exame."
+        read -rp "  $(tr_text 'Pressione ENTER para começar › ' 'Press ENTER to begin › ')" _
+    fi
 
-    start_timer
     {
         echo "exam=$EXAM_CHOICE real_mode=$REAL_MODE duration_min=$DURATION_MIN start=$(date -Iseconds)"
     } >> "$logfile"
@@ -1128,7 +1241,7 @@ main() {
     local curriculum=()
     while IFS= read -r -d '' rec; do curriculum+=("$rec"); done < <(build_curriculum)
     local total=${#curriculum[@]}
-    [ "$total" -gt 0 ] || die "não foram encontrados níveis para '$EXAM_CHOICE' em '$EXAM_ROOT'"
+    [ "$total" -gt 0 ] || die "$(tr_text 'não foram encontrados níveis para' 'no levels were found for') '$EXAM_CHOICE' $(tr_text 'em' 'in') '$EXAM_ROOT'"
     local -a level_exercises=() level_results=()
     local idx=0 rec_exam lvl ex current_exam=""
     local cleared=0 skipped=0
@@ -1159,7 +1272,7 @@ main() {
         fi
 
         if [ -z "$ex" ]; then
-            echo "${YEL}Sem exercícios neste nível; a sessão vai continuar.${RST}"
+            echo "${YEL}$(tr_text 'Sem exercícios neste nível; a sessão vai continuar.' 'No exercises at this level; the session will continue.')${RST}"
             continue
         fi
         local work="$session_dir/${rec_exam}_$(basename "$lvl" | tr ' ' '_')"
@@ -1178,7 +1291,7 @@ main() {
             1)
                 level_results[$idx]=skipped
                 skipped=$((skipped+1))
-                echo "${YEL}Exercício saltado.${RST}"
+                echo "${YEL}$(tr_text 'Exercício saltado.' 'Exercise skipped.')${RST}"
                 echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=skipped" >> "$logfile"
                 ;;
             2)
@@ -1186,7 +1299,7 @@ main() {
                 break
                 ;;
             3)
-                echo "${RED}Sessão terminada pelo utilizador.${RST}"
+                echo "${RED}$(tr_text 'Sessão terminada pelo utilizador.' 'Session ended by the user.')${RST}"
                 echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=quit" >> "$logfile"
                 break
                 ;;
@@ -1214,26 +1327,33 @@ main() {
 
     echo
     if [ "$REAL_MODE" -eq 1 ]; then
-        section "RELATÓRIO · MODO REAL"
+        section "$(tr_text 'RELATÓRIO · MODO REAL' 'REPORT · REAL MODE')"
     else
-        section "RELATÓRIO · $EXAM_CHOICE"
+        section "$(tr_text 'RELATÓRIO ·' 'REPORT ·') $EXAM_CHOICE"
     fi
-    printf 'Total de níveis     : %s\n' "$total"
-    printf 'Concluídos          : %s / %s\n' "$cleared" "$total"
-    printf 'Saltados            : %s\n' "$skipped"
-    printf 'Pendentes           : %s\n' "${#pending_items[@]}"
-    printf '\n%sConcluídos%s\n' "$GRN$BOLD" "$RST"
-    if [ "${#completed_items[@]}" -eq 0 ]; then echo '  Nenhum'; else for item_label in "${completed_items[@]}"; do printf '  ✓ %s\n' "$item_label"; done; fi
-    printf '\n%sSaltados%s\n' "$YEL$BOLD" "$RST"
-    if [ "${#skipped_items[@]}" -eq 0 ]; then echo '  Nenhum'; else for item_label in "${skipped_items[@]}"; do printf '  - %s\n' "$item_label"; done; fi
-    printf '\n%sPendentes%s\n' "$CYA$BOLD" "$RST"
-    if [ "${#pending_items[@]}" -eq 0 ]; then echo '  Nenhum'; else for item_label in "${pending_items[@]}"; do printf '  · %s\n' "$item_label"; done; fi
+    if [ "$LANGUAGE" = en ]; then
+        printf 'Total levels        : %s\n' "$total"
+        printf 'Completed           : %s / %s\n' "$cleared" "$total"
+        printf 'Skipped             : %s\n' "$skipped"
+        printf 'Pending             : %s\n' "${#pending_items[@]}"
+    else
+        printf 'Total de níveis     : %s\n' "$total"
+        printf 'Concluídos          : %s / %s\n' "$cleared" "$total"
+        printf 'Saltados            : %s\n' "$skipped"
+        printf 'Pendentes           : %s\n' "${#pending_items[@]}"
+    fi
+    printf '\n%s%s%s\n' "$GRN$BOLD" "$(tr_text 'Concluídos' 'Completed')" "$RST"
+    if [ "${#completed_items[@]}" -eq 0 ]; then echo "  $(tr_text 'Nenhum' 'None')"; else for item_label in "${completed_items[@]}"; do printf '  ✓ %s\n' "$item_label"; done; fi
+    printf '\n%s%s%s\n' "$YEL$BOLD" "$(tr_text 'Saltados' 'Skipped')" "$RST"
+    if [ "${#skipped_items[@]}" -eq 0 ]; then echo "  $(tr_text 'Nenhum' 'None')"; else for item_label in "${skipped_items[@]}"; do printf '  - %s\n' "$item_label"; done; fi
+    printf '\n%s%s%s\n' "$CYA$BOLD" "$(tr_text 'Pendentes' 'Pending')" "$RST"
+    if [ "${#pending_items[@]}" -eq 0 ]; then echo "  $(tr_text 'Nenhum' 'None')"; else for item_label in "${pending_items[@]}"; do printf '  · %s\n' "$item_label"; done; fi
     if [ "$DURATION_MIN" -eq 0 ]; then
-        echo "Tempo utilizado  : sem limite"
+        echo "$(tr_text 'Tempo utilizado  : sem limite' 'Time used        : unlimited')"
     else
-        echo "Tempo utilizado  : $(fmt_secs $(( DURATION_MIN*60 - $(seconds_left) )))"
+        echo "$(tr_text 'Tempo utilizado  :' 'Time used        :') $(fmt_secs $(( DURATION_MIN*60 - $(seconds_left) )))"
     fi
-    echo "Registo da sessão: $logfile"
+    echo "$(tr_text 'Registo da sessão:' 'Session log:') $logfile"
     hr
     echo "$(date -Iseconds) cleared=$cleared skipped=$skipped pending=${#pending_items[@]} total_levels=$total" >> "$logfile"
 }

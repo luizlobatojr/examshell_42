@@ -28,7 +28,7 @@ Ou use o Makefile:
 make
 ```
 
-O menu permite escolher um exame, iniciar o Modo Real, sortear um exame, selecionar manualmente um nível e exercício, atualizar o projeto ou atualizar apenas o banco de exercícios.
+O menu permite escolher um exame, iniciar o Modo Real, sortear um exame, selecionar manualmente um nível e exercício, atualizar o projeto e configurar o idioma da interface.
 
 ## Linha de comando
 
@@ -53,23 +53,23 @@ Exemplos:
 ./examshell.sh -d ~/repos/42porto-piscine-17/exam-practice -e random
 ```
 
-Sem `-e`, o menu inicial solicita uma escolha. As durações padrão são 60 minutos para exames regulares, 180 minutos para `final-exam` e sem limite para o Modo Real. `-t` substitui o padrão.
+Sem `-e`, o menu inicial solicita uma escolha. Use `c` para abrir as configurações e selecionar Português ou Inglês; a preferência fica salva em `~/.config/examshell/config` (ou em `$XDG_CONFIG_HOME/examshell/config`). As durações padrão são 60 minutos para exames regulares, 180 minutos para `final-exam` e sem limite para o Modo Real. `-t` substitui o padrão.
 
 ## Menu inicial
 
 - **Número:** inicia o exame correspondente. O programa sorteia um exercício por nível.
 - **`m`:** inicia o Modo Real, percorrendo `exam-00`, `exam-01`, `exam-02` e `final-exam`.
 - **`r`:** sorteia um exame.
-- **`s`:** permite escolher o exame, o nível e um exercício específico. Na lista de exercícios, `r` sorteia um exercício dentro do nível selecionado.
+- **`s`:** permite escolher o exame, o nível e um exercício específico. Na lista de exercícios, `r` sorteia um exercício dentro do nível selecionado; `q` volta à tela anterior.
+- **`c`:** abre as configurações para escolher o idioma da interface (Português ou Inglês). Use `q` para voltar ao menu anterior; as telas são limpas ao retornar.
 - **`u`:** sincroniza o projeto com o GitHub por fast-forward. Se houver conflitos ou a atualização falhar, o Git interrompe a operação e o programa apresenta uma mensagem. Depois de uma sincronização bem-sucedida, reinicie o programa.
-- **`b`:** atualiza somente a pasta `exam-practice/` a partir do repositório de exercícios [42porto-piscine-17](https://github.com/GTitonele/42porto-piscine-17/tree/main/exam-practice). Esta opção está disponível para o banco incluído no projeto e requer que ele não tenha alterações locais. O código do Exam Shell não é atualizado por essa ação.
 - **`q`:** sai do programa.
 
 O estado de atualização do projeto é consultado ao abrir o menu. Essa consulta requer ligação ao GitHub; se não estiver disponível, a opção de atualização continua acessível.
 
 ## Durante o exercício
 
-O cronómetro mostra o tempo restante e atualiza a cada segundo enquanto aguarda comandos num terminal interativo. Quando restam cinco minutos ou menos, apresenta um aviso. O contador é global para a sessão.
+O cronómetro aparece pausado na primeira impressão do menu e começa a contar em seguida. O tempo restante é atualizado visualmente quando o menu é reimpresso; enquanto aguarda comandos, a contagem continua em segundo plano e o terminal não redesenha o cronómetro a cada segundo. Quando restam cinco minutos ou menos, apresenta um aviso. O contador é global para a sessão.
 
 | Tecla | Ação |
 | --- | --- |
