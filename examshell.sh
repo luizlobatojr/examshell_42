@@ -127,47 +127,63 @@ list_exams() {
 choose_exam() {
     if [ -z "$EXAM_CHOICE" ]; then
         local -a exams=()
+        local pick i
         mapfile -t exams < <(list_exams)
         [ "${#exams[@]}" -gt 0 ] || die "não foram encontrados exames em '$EXAM_ROOT'"
-        if [[ -t 1 ]]; then
-            printf '\033[H\033[J'
-        fi
-        printf '%s┌────────────────────────────────────────┐%s\n' "$CYA" "$RST"
-        printf '%s│%s           %s           %s│%s\n' "$CYA" "$YEL" 'EXAM SHELL - 42' "$CYA" "$RST"
-        printf '%s└────────────────────────────────────────┘%s\n' "$CYA" "$RST"
-        printf '\n Selecione um exame para começar:\n\n'
-        local i=1
-        for e in "${exams[@]}"; do printf '  %s[%02d]%s %s\n' "$GRN" "$i" "$RST" "$e"; i=$((i+1)); done
-        printf '\n  %s[ m]%s Modo Real %s(todos em sequência)%s\n' "$MAG" "$RST" "$DIM" "$RST"
-        printf '  %s[ r]%s Exame aleatório\n' "$MAG" "$RST"
-        printf '  %s[ u]%s Atualizar pelo GitHub\n' "$MAG" "$RST"
-        printf '  %s[ q]%s Sair do programa\n\n' "$RED" "$RST"
+
         while true; do
+            if [[ -t 1 ]]; then
+                printf '\033[H\033[J'
+            fi
+            printf '%s┌────────────────────────────────────────┐%s\n' "$CYA" "$RST"
+            printf '%s│%s           %s           %s│%s\n' "$CYA" "$YEL" 'EXAM SHELL - 42' "$CYA" "$RST"
+            printf '%s└────────────────────────────────────────┘%s\n' "$CYA" "$RST"
+            printf '\n Selecione um exame para começar:\n\n'
+            i=1
+            for e in "${exams[@]}"; do printf '  %s[%02d]%s %s\n' "$GRN" "$i" "$RST" "$e"; i=$((i+1)); done
+            printf '\n  %s[ m]%s Modo Real %s(todos em sequência)%s\n' "$MAG" "$RST" "$DIM" "$RST"
+            printf '  %s[ r]%s Exame aleatório\n' "$MAG" "$RST"
+            printf '  %s[ u]%s Atualizar pelo GitHub\n' "$MAG" "$RST"
+            printf '  %s[ q]%s Sair do programa\n\n' "$RED" "$RST"
             printf '%s ❯ %s' "$CYA" "$RST"
-            read -r pick
-            if [ "$pick" != "u" ]; then break; fi
-            update_project
-            update_status=$?
-            if [ "$update_status" -eq 2 ]; then
-                echo "Reinicie o programa para usar a versão atualizada."
+            if ! read -r pick; then
                 EXIT_REQUESTED=1
+                printf "\nEntrada terminada. Até logo.\n"
                 return 0
             fi
-            printf '\n'
+
+            case "$pick" in
+                q)
+                    EXIT_REQUESTED=1
+                    echo "Até logo."
+                    return 0
+                    ;;
+                u)
+                    update_project
+                    update_status=$?
+                    if [ "$update_status" -eq 2 ]; then
+                        echo "Reinicie o programa para usar a versão atualizada."
+                        EXIT_REQUESTED=1
+                        return 0
+                    fi
+                    ;;
+                r)
+                    EXAM_CHOICE="${exams[$((RANDOM % ${#exams[@]}))]}"
+                    break
+                    ;;
+                m)
+                    EXAM_CHOICE="real"
+                    break
+                    ;;
+                *)
+                    if [[ "$pick" =~ ^[0-9]+$ ]] && [ "$pick" -ge 1 ] && [ "$pick" -le "${#exams[@]}" ]; then
+                        EXAM_CHOICE="${exams[$((pick-1))]}"
+                        break
+                    fi
+                    printf "${YEL}Opção inválida: '%s'. Escolha uma das opções do menu.\n\n${RST}" "$pick"
+                    ;;
+            esac
         done
-        if [ "$pick" = "q" ]; then
-            EXIT_REQUESTED=1
-            echo "Até logo."
-            return 0
-        elif [ "$pick" = "r" ]; then
-            EXAM_CHOICE="${exams[$((RANDOM % ${#exams[@]}))]}"
-        elif [ "$pick" = "m" ]; then
-            EXAM_CHOICE="real"
-        elif [[ "$pick" =~ ^[0-9]+$ ]] && [ "$pick" -ge 1 ] && [ "$pick" -le "${#exams[@]}" ]; then
-            EXAM_CHOICE="${exams[$((pick-1))]}"
-        else
-            die "opção inválida: '$pick'"
-        fi
     elif [ "$EXAM_CHOICE" = "random" ]; then
         local -a exams=()
         mapfile -t exams < <(list_exams)
