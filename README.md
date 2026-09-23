@@ -7,7 +7,7 @@ Uma interface de terminal interativa desenvolvida para treinar e simular exames 
 ## 📋 Sumário
 * [Visão Geral](#-visão-geral)
 * [Requisitos do Sistema](#-requisitos-do-sistema)
-* [Instalação e Execução](#-instalação-e-execução)
+* [Como Executar (Makefile)](#-como-executar-makefile)
 * [Opções de Linha de Comando](#-opções-de-linha-de-comando)
 * [Atalhos do Makefile](#-atalhos-do-makefile)
 * [Comandos Durante o Exercício](#-comandos-durante-o-exercício)
@@ -33,9 +33,9 @@ Certifique-se de que o seu ambiente possui os seguintes utilitários e dependên
 
 ---
 
-## 🚀 Instalação e Execução
+## 🚀 Como Executar (Makefile)
 
-Na pasta raiz do projeto, inicie a aplicação com:
+O projeto foi estruturado para ser executado de forma prática através do Makefile na pasta raiz:
 
 ```bash
-./examshell.sh
+make
