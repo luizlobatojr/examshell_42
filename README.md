@@ -5,7 +5,7 @@ Uma interface de terminal interativa desenvolvida para treinar e simular exames 
 ---
 
 ## 📋 Sumário
-* [Visão Geraal](#-visão-geral)
+* [Visão Geral](#-visão-geral)
 * [Requisitos do Sistema](#-requisitos-do-sistema)
 * [Como Executar (Makefile)](#-como-executar-makefile)
 * [Opções de Linha de Comando](#-opções-de-linha-de-comando)
