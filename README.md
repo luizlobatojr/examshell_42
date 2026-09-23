@@ -19,7 +19,7 @@ Na pasta do projeto:
 ./examshell.sh
 ```
 
-O menu inicial permite escolher um exame, iniciar o Modo Real, sortear um exame ou sair com `q`. Também é possível iniciar um exame diretamente:
+O menu inicial permite escolher um exame, iniciar o Modo Real, sortear um exame, atualizar o projeto pelo GitHub com `u` ou sair com `q`. A atualização exige uma cópia Git limpa e avança o branch atual apenas por fast-forward; alterações locais são preservadas e impedem a sincronização. Também é possível iniciar um exame diretamente:
 
 ```sh
 ./examshell.sh -e exam-00

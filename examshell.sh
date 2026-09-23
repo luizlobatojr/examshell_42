@@ -140,9 +140,21 @@ choose_exam() {
         for e in "${exams[@]}"; do printf '  %s[%02d]%s %s\n' "$GRN" "$i" "$RST" "$e"; i=$((i+1)); done
         printf '\n  %s[ m]%s Modo Real %s(todos em sequência)%s\n' "$MAG" "$RST" "$DIM" "$RST"
         printf '  %s[ r]%s Exame aleatório\n' "$MAG" "$RST"
+        printf '  %s[ u]%s Atualizar pelo GitHub\n' "$MAG" "$RST"
         printf '  %s[ q]%s Sair do programa\n\n' "$RED" "$RST"
-        printf '%s ❯ %s' "$CYA" "$RST"
-        read -r pick
+        while true; do
+            printf '%s ❯ %s' "$CYA" "$RST"
+            read -r pick
+            if [ "$pick" != "u" ]; then break; fi
+            update_project
+            update_status=$?
+            if [ "$update_status" -eq 2 ]; then
+                echo "Reinicie o programa para usar a versão atualizada."
+                EXIT_REQUESTED=1
+                return 0
+            fi
+            printf '\n'
+        done
         if [ "$pick" = "q" ]; then
             EXIT_REQUESTED=1
             echo "Até logo."
@@ -168,6 +180,43 @@ choose_exam() {
         return
     fi
     [ -d "$EXAM_ROOT/$EXAM_CHOICE" ] || die "exam '$EXAM_CHOICE' not found under $EXAM_ROOT"
+}
+
+update_project() {
+    local remote_url branch
+    if ! command -v git >/dev/null 2>&1; then
+        echo "${RED}Não foi possível atualizar: o Git não está instalado.${RST}"
+        return 1
+    fi
+    if ! git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "${RED}Não foi possível atualizar: esta cópia não está dentro de um repositório Git.${RST}"
+        return 1
+    fi
+    remote_url="$(git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null)" || {
+        echo "${RED}Não foi possível atualizar: o remoto 'origin' não está configurado.${RST}"
+        return 1
+    }
+    case "$remote_url" in
+        https://github.com/*|http://github.com/*|git@github.com:*|ssh://git@github.com/*) ;;
+        *) echo "${RED}Não foi possível atualizar: 'origin' não aponta para GitHub.${RST}"
+           return 1 ;;
+    esac
+    if [ -n "$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=normal)" ]; then
+        echo "${YEL}Atualização cancelada: há alterações locais no projeto. Guarde ou descarte-as e tente novamente.${RST}"
+        return 1
+    fi
+    branch="$(git -C "$SCRIPT_DIR" symbolic-ref --quiet --short HEAD)" || {
+        echo "${RED}Não foi possível atualizar: HEAD não aponta para um branch.${RST}"
+        return 1
+    }
+
+    echo "A procurar atualizações no GitHub..."
+    if ! git -C "$SCRIPT_DIR" pull --ff-only origin "$branch"; then
+        echo "${RED}A atualização falhou. Verifique a ligação, o acesso ao GitHub e se o branch pode avançar sem conflitos.${RST}"
+        return 1
+    fi
+    echo "${GRN}Projeto sincronizado com o GitHub.${RST}"
+    return 2
 }
 
 default_duration_for() {
