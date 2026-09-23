@@ -117,7 +117,7 @@ parse_args() {
 
 run_preflight() {
     local -a missing=() fatal=() problems=() exam_dirs=() levels=() subjects=()
-    local exam level subject line has_name has_expected old_nullglob=0 old_globstar=0
+    local exam level subject line has_name has_expected has_project old_nullglob=0 old_globstar=0
     local level_count=0 exam_count=0
     local -a required=("${COMPILER[0]}" nm python3 timeout awk sort find sed grep tr xargs basename mkdir cp cat date)
 
@@ -163,11 +163,13 @@ run_preflight() {
                     fi
                     has_name=0
                     has_expected=0
+                    has_project=0
                     while IFS= read -r line || [ -n "$line" ]; do
                         [[ "$line" =~ ^Assignment[[:space:]]+name[[:space:]]*: ]] && has_name=1
                         [[ "$line" =~ ^Expected[[:space:]]+files[[:space:]]*: ]] && has_expected=1
+                        [[ "$line" =~ ^project[[:space:]]+name[[:space:]]*: ]] && has_project=1
                     done < "$subject"
-                    if [ "$has_name" -eq 0 ] || [ "$has_expected" -eq 0 ]; then
+                    if { [ "$has_name" -eq 0 ] || [ "$has_expected" -eq 0 ]; } && [ "$has_project" -eq 0 ]; then
                         problems+=("$subject: faltam campos Assignment name e/ou Expected files; serão usados valores padrão")
                     fi
                 done
@@ -831,8 +833,17 @@ run_exercise() {
     local subject_file="$1" work="$2" level_label="$3"
     local name expected allowed cmd
     name=$(subj_field "$subject_file" "Assignment name")
+    if [ -z "$name" ]; then
+        name=$(subj_field "$subject_file" "project name")
+        name="${name##*/}"
+        name="${name%.c}"
+    fi
     name="${name:-$(basename "$subject_file" .subject.txt)}"
     expected=$(subj_field "$subject_file" "Expected files")
+    if [ -z "$expected" ]; then
+        expected=$(subj_field "$subject_file" "project name")
+        expected="${expected##*/}"
+    fi
     expected="${expected:-${name}.c}"
     allowed=$(subj_field "$subject_file" "Allowed functions")
 
