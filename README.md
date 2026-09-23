@@ -1,66 +1,41 @@
-# Exam Shell 42
+# Exam Shell 42 🚀
 
-Uma interface de terminal para praticar exames da 42 por exercício e nível. O programa apresenta os enunciados, permite editar ou carregar soluções em C, compila com avisos estritos, verifica funções permitidas e executa testes automáticos quando há casos de teste ou um teste de função disponível.
+Uma interface de terminal interativa desenvolvida para treinar e simular exames da 42 por exercício e nível, permitindo aprimorar lógica, gerenciamento de tempo e rigor técnico em C.
 
-Os testes automáticos são verificações parciais para ajudar no treino; não substituem a correção oficial da 42.
+---
 
-## Requisitos
+## 📋 Sumário
+* [Visão Geral](#-visão-geral)
+* [Requisitos do Sistema](#-requisitos-do-sistema)
+* [Instalação e Execução](#-instalação-e-execução)
+* [Opções de Linha de Comando](#-opções-de-linha-de-comando)
+* [Atalhos do Makefile](#-atalhos-do-makefile)
+* [Comandos Durante o Exercício](#-comandos-durante-o-exercício)
+* [Licença](#-licença)
 
-- Bash 4 ou superior
-- Python 3
-- Um compilador C, como `cc` ou `gcc`
-- Utilitários Unix: `nm`, `timeout`, `awk`, `sort`, `find`, `sed`, `grep`, `tr`, `xargs`, `basename`, `mkdir`, `cp`, `cat` e `date`
+---
 
-## Iniciar
+## 🔍 Visão Geral
 
-Na pasta do projeto:
+O programa apresenta enunciados, permite editar ou carregar soluções em C, compila o código com avisos estritos, verifica funções permitidas e executa testes automatizados sempre que disponíveis.
 
-```sh
+> **Nota importante:** Os testes automatizados funcionam como verificações parciais para auxiliar no treino diário e **não substituem** a correção oficial da 42.
+
+---
+
+## ⚙️ Requisitos
+
+Certifique-se de que o seu ambiente possui os seguintes utilitários e dependências:
+* **Bash** (versão 4 ou superior)
+* **Python 3**
+* **Compilador C** (`cc` ou `gcc`)
+* **Utilitários Unix essenciais:** `nm`, `timeout`, `awk`, `sort`, `find`, `sed`, `grep`, `tr`, `xargs`, `basename`, `mkdir`, `cp`, `cat`, `date`, `git`
+
+---
+
+## 🚀 Instalação e Execução
+
+Na pasta raiz do projeto, inicie a aplicação com:
+
+```bash
 ./examshell.sh
-```
-
-O menu inicial permite escolher um exame, iniciar o Modo Real, sortear um exame, atualizar o projeto pelo GitHub com `u` ou sair com `q`. A atualização exige uma cópia Git limpa e avança o branch atual apenas por fast-forward; alterações locais são preservadas e impedem a sincronização. Também é possível iniciar um exame diretamente:
-
-```sh
-./examshell.sh -e exam-00
-./examshell.sh -e final-exam -t 180
-./examshell.sh -e real
-./examshell.sh -t 0
-```
-
-A duração é informada em minutos; `-t 0` remove o limite de tempo. Para usar um banco de exercícios noutra pasta:
-
-```sh
-./examshell.sh -d /caminho/para/exam-practice -e exam-00
-```
-
-Use `./examshell.sh -h` para ver as opções. O Makefile também oferece atalhos:
-
-```sh
-make
-make run ARGS='-e exam-01 -t 60'
-make check
-make help
-```
-
-## Durante o exercício
-
-- `e`: editar o ficheiro esperado no editor configurado em `$EDITOR` (ou `vi`)
-- `l`: carregar um ficheiro existente
-- `c`: compilar e executar as verificações disponíveis
-- `t`: repetir os testes automáticos
-- `r`: executar manualmente o programa compilado
-- `s`: mostrar novamente o enunciado
-- `n`: avançar quando a compilação e as verificações passam
-- `k`: saltar o exercício
-- `q`: terminar a sessão
-
-Os ficheiros de trabalho e registos das sessões são guardados em `~/.examshell/sessions/`.
-
-## Banco de exercícios
-
-Por padrão, o programa procura `exam-practice/` junto de `examshell.sh`. O banco incluído contém enunciados associados ao projeto [42porto-piscine-17](https://github.com/GTitonele/42porto-piscine-17). Os enunciados e materiais de terceiros podem ter termos de licença próprios; consulte a origem antes de os redistribuir.
-
-## Licença
-
-O código deste projeto está disponível sob a licença MIT; consulte [LICENSE](LICENSE). Essa licença não altera os termos aplicáveis ao banco de exercícios ou a outros materiais de terceiros.
