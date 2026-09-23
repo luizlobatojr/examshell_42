@@ -58,6 +58,8 @@ EXAM_CHOICE=""
 DURATION_MIN=""
 REAL_MODE=0
 EXIT_REQUESTED=0
+SELECTED_LEVEL=""
+SELECTED_EXERCISE=""
 WORKDIR_ROOT="${HOME}/.examshell/sessions"
 CC=${CC:-cc}
 read -r -a COMPILER <<< "$CC"
@@ -113,6 +115,86 @@ parse_args() {
     fi
 }
 
+run_preflight() {
+    local -a missing=() fatal=() problems=() exam_dirs=() levels=() subjects=()
+    local exam level subject line has_name has_expected old_nullglob=0 old_globstar=0
+    local level_count=0 exam_count=0
+    local -a required=("${COMPILER[0]}" nm python3 timeout awk sort find sed grep tr xargs basename mkdir cp cat date)
+
+    for bin in "${required[@]}"; do
+        command -v "$bin" >/dev/null 2>&1 || missing+=("$bin")
+    done
+    command -v git >/dev/null 2>&1 || problems+=("git não encontrado; a verificação/atualização pelo GitHub ficará indisponível")
+
+    if [[ ! -d "$EXAM_ROOT" || ! -r "$EXAM_ROOT" ]]; then
+        fatal+=("banco de exercícios '$EXAM_ROOT' não existe ou não pode ser lido")
+    else
+        shopt -q nullglob && old_nullglob=1
+        shopt -q globstar && old_globstar=1
+        shopt -s nullglob globstar
+        for exam in "$EXAM_ROOT"/*; do
+            [[ -d "$exam" ]] || continue
+            exam_dirs+=("$exam")
+        done
+        exam_count=${#exam_dirs[@]}
+        if [ "$exam_count" -eq 0 ]; then
+            fatal+=("não há pastas de exames em '$EXAM_ROOT'")
+        fi
+        for exam in "${exam_dirs[@]}"; do
+            levels=("$exam"/Level*)
+            local valid_levels=0
+            for level in "${levels[@]}"; do [[ -d "$level" ]] && valid_levels=$((valid_levels+1)); done
+            if [ "$valid_levels" -eq 0 ]; then
+                problems+=("${exam##*/}: não contém pastas 'Level *'")
+                continue
+            fi
+            level_count=$((level_count+valid_levels))
+            for level in "${levels[@]}"; do
+                [[ -d "$level" ]] || continue
+                subjects=("$level"/**/*.subject.txt)
+                if [ "${#subjects[@]}" -eq 0 ]; then
+                    problems+=("${exam##*/}/${level##*/}: não contém enunciados *.subject.txt")
+                    continue
+                fi
+                for subject in "${subjects[@]}"; do
+                    if [[ ! -r "$subject" || ! -s "$subject" ]]; then
+                        problems+=("$subject: vazio ou sem permissão de leitura")
+                        continue
+                    fi
+                    has_name=0
+                    has_expected=0
+                    while IFS= read -r line || [ -n "$line" ]; do
+                        [[ "$line" =~ ^Assignment[[:space:]]+name[[:space:]]*: ]] && has_name=1
+                        [[ "$line" =~ ^Expected[[:space:]]+files[[:space:]]*: ]] && has_expected=1
+                    done < "$subject"
+                    if [ "$has_name" -eq 0 ] || [ "$has_expected" -eq 0 ]; then
+                        problems+=("$subject: faltam campos Assignment name e/ou Expected files; serão usados valores padrão")
+                    fi
+                done
+            done
+        done
+        [ "$old_nullglob" -eq 1 ] || shopt -u nullglob
+        [ "$old_globstar" -eq 1 ] || shopt -u globstar
+        [ "$level_count" -gt 0 ] || fatal+=("o banco não contém nenhum nível utilizável")
+    fi
+
+    if [ "${#missing[@]}" -gt 0 ]; then
+        printf '%sVerificação inicial: faltam dependências obrigatórias:%s\n' "$RED$BOLD" "$RST" >&2
+        for line in "${missing[@]}"; do printf '  - %s\n' "$line" >&2; done
+    fi
+    if [ "${#fatal[@]}" -gt 0 ]; then
+        printf '%sNão é possível iniciar: banco de exercícios inválido.%s\n' "$RED$BOLD" "$RST" >&2
+        for line in "${fatal[@]}"; do printf '  - %s\n' "$line" >&2; done
+    fi
+    if [ "${#problems[@]}" -gt 0 ]; then
+        printf '%sAvisos da verificação inicial (%s exame(s), %s nível(is)):%s\n' "$YEL$BOLD" "$exam_count" "$level_count" "$RST" >&2
+        for line in "${problems[@]}"; do printf '  - %s\n' "$line" >&2; done
+    elif [ "${#missing[@]}" -eq 0 ] && [ "${#fatal[@]}" -eq 0 ]; then
+        printf '%sVerificação inicial concluída: dependências e banco de exercícios prontos (%s exame(s), %s nível(is)).%s\n' "$GRN" "$exam_count" "$level_count" "$RST"
+    fi
+    [ "${#missing[@]}" -eq 0 ] && [ "${#fatal[@]}" -eq 0 ]
+}
+
 # ---------------------------------------------------------------------------
 # Exam / level / exercise selection
 # ---------------------------------------------------------------------------
@@ -127,9 +209,10 @@ list_exams() {
 choose_exam() {
     if [ -z "$EXAM_CHOICE" ]; then
         local -a exams=()
-        local pick i
+        local pick i update_status
         mapfile -t exams < <(list_exams)
         [ "${#exams[@]}" -gt 0 ] || die "não foram encontrados exames em '$EXAM_ROOT'"
+        check_for_updates
 
         while true; do
             if [[ -t 1 ]]; then
@@ -143,7 +226,22 @@ choose_exam() {
             for e in "${exams[@]}"; do printf '  %s[%02d]%s %s\n' "$GRN" "$i" "$RST" "$e"; i=$((i+1)); done
             printf '\n  %s[ m]%s Modo Real %s(todos em sequência)%s\n' "$MAG" "$RST" "$DIM" "$RST"
             printf '  %s[ r]%s Exame aleatório\n' "$MAG" "$RST"
-            printf '  %s[ u]%s Atualizar pelo GitHub\n' "$MAG" "$RST"
+            printf '  %s[ s]%s Selecionar nível/exercício\n' "$MAG" "$RST"
+            printf '  %s[ b]%s Atualizar apenas banco de exercícios\n' "$MAG" "$RST"
+            case "$UPDATE_STATE" in
+                available)
+                    printf '  %s[ u]%s Atualizar pelo GitHub (%s commits novos)\n' "$MAG" "$RST" "$UPDATE_COUNT"
+                    ;;
+                current)
+                    printf '  %s[ u]%s Atualizações: em dia\n' "$MAG" "$RST"
+                    ;;
+                diverged)
+                    printf '  %s[ u]%s Atualizar pelo GitHub (branches divergentes)\n' "$YEL" "$RST"
+                    ;;
+                *)
+                    printf '  %s[ u]%s Verificar atualizações (GitHub indisponível)\n' "$YEL" "$RST"
+                    ;;
+            esac
             printf '  %s[ q]%s Sair do programa\n\n' "$RED" "$RST"
             printf '%s ❯ %s' "$CYA" "$RST"
             if ! read -r pick; then
@@ -167,9 +265,17 @@ choose_exam() {
                         return 0
                     fi
                     ;;
+                b)
+                    update_exercise_bank
+                    ;;
                 r)
                     EXAM_CHOICE="${exams[$((RANDOM % ${#exams[@]}))]}"
                     break
+                    ;;
+                s)
+                    if select_manual_exercise "${exams[@]}"; then
+                        break
+                    fi
                     ;;
                 m)
                     EXAM_CHOICE="real"
@@ -198,6 +304,32 @@ choose_exam() {
     [ -d "$EXAM_ROOT/$EXAM_CHOICE" ] || die "exam '$EXAM_CHOICE' not found under $EXAM_ROOT"
 }
 
+UPDATE_STATE="unknown"
+UPDATE_COUNT=0
+
+check_for_updates() {
+    local branch count
+    UPDATE_STATE="unknown"
+    UPDATE_COUNT=0
+    command -v git >/dev/null 2>&1 || return 1
+    git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+    branch="$(git -C "$SCRIPT_DIR" symbolic-ref --quiet --short HEAD)" || return 1
+    git -C "$SCRIPT_DIR" remote get-url origin 2>/dev/null | grep -Eq '^(https?://github\.com/|git@github\.com:|ssh://git@github\.com/)' || return 1
+
+    if ! GIT_TERMINAL_PROMPT=0 timeout 10s git -C "$SCRIPT_DIR" fetch --quiet origin "$branch"; then
+        return 1
+    fi
+    count="$(git -C "$SCRIPT_DIR" rev-list --count HEAD..FETCH_HEAD 2>/dev/null)" || return 1
+    if [ "$count" -eq 0 ]; then
+        UPDATE_STATE="current"
+    elif git -C "$SCRIPT_DIR" merge-base --is-ancestor HEAD FETCH_HEAD; then
+        UPDATE_STATE="available"
+        UPDATE_COUNT="$count"
+    else
+        UPDATE_STATE="diverged"
+    fi
+}
+
 update_project() {
     local remote_url branch
     if ! command -v git >/dev/null 2>&1; then
@@ -217,22 +349,97 @@ update_project() {
         *) echo "${RED}Não foi possível atualizar: 'origin' não aponta para GitHub.${RST}"
            return 1 ;;
     esac
-    if [ -n "$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=normal)" ]; then
-        echo "${YEL}Atualização cancelada: há alterações locais no projeto. Guarde ou descarte-as e tente novamente.${RST}"
-        return 1
-    fi
     branch="$(git -C "$SCRIPT_DIR" symbolic-ref --quiet --short HEAD)" || {
         echo "${RED}Não foi possível atualizar: HEAD não aponta para um branch.${RST}"
         return 1
     }
 
-    echo "A procurar atualizações no GitHub..."
-    if ! git -C "$SCRIPT_DIR" pull --ff-only origin "$branch"; then
-        echo "${RED}A atualização falhou. Verifique a ligação, o acesso ao GitHub e se o branch pode avançar sem conflitos.${RST}"
+    echo "A sincronizar com o GitHub..."
+    if ! GIT_TERMINAL_PROMPT=0 timeout 60s git -C "$SCRIPT_DIR" pull --ff-only origin "$branch"; then
+        echo "${RED}A atualização falhou. As alterações locais podem conflitar com as do GitHub; confira 'git status' e resolva os conflitos antes de tentar novamente.${RST}"
         return 1
     fi
     echo "${GRN}Projeto sincronizado com o GitHub.${RST}"
     return 2
+}
+
+update_exercise_bank() {
+    local bank_root clone_dir stage_dir backup_dir bank_commit exam
+    local -a expected_exams=(exam-00 exam-01 exam-02 final-exam)
+
+    if ! command -v git >/dev/null 2>&1 || ! command -v mktemp >/dev/null 2>&1; then
+        echo "${RED}Não foi possível atualizar o banco: instale git e mktemp.${RST}"
+        return 1
+    fi
+    bank_root="$(cd -- "$EXAM_ROOT" 2>/dev/null && pwd -P)" || {
+        echo "${RED}Não foi possível localizar o banco em '$EXAM_ROOT'.${RST}"
+        return 1
+    }
+    if [ "$bank_root" != "$SCRIPT_DIR/exam-practice" ]; then
+        echo "${YEL}A atualização isolada está disponível apenas para o banco incluído no projeto. O banco configurado está em '$bank_root'.${RST}"
+        return 1
+    fi
+    if [ -n "$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=all --ignored -- exam-practice)" ]; then
+        echo "${YEL}Atualização cancelada: há alterações locais em exam-practice. Guarde-as ou descarte-as antes de atualizar o banco.${RST}"
+        return 1
+    fi
+
+    clone_dir="$(mktemp -d "${TMPDIR:-/tmp}/examshell-bank.XXXXXX")" || {
+        echo "${RED}Não foi possível criar uma pasta temporária para a atualização.${RST}"
+        return 1
+    }
+    stage_dir="$SCRIPT_DIR/.exam-practice-update-$$"
+    backup_dir="$SCRIPT_DIR/.exam-practice-backup-$$"
+    if [ -e "$stage_dir" ] || [ -e "$backup_dir" ]; then
+        rm -rf -- "$clone_dir"
+        echo "${RED}Há uma pasta temporária de atualização existente; remova-a antes de tentar novamente.${RST}"
+        return 1
+    fi
+
+    echo "A baixar apenas exam-practice de GTitonele/42porto-piscine-17..."
+    if ! GIT_TERMINAL_PROMPT=0 timeout 120s git clone --quiet --depth 1 --filter=blob:none --sparse --branch main \
+        https://github.com/GTitonele/42porto-piscine-17.git "$clone_dir/source" ||
+       ! GIT_TERMINAL_PROMPT=0 timeout 60s git -C "$clone_dir/source" sparse-checkout set exam-practice; then
+        rm -rf -- "$clone_dir" "$stage_dir"
+        echo "${RED}Não foi possível obter o banco do GitHub. Verifique a ligação e tente novamente.${RST}"
+        return 1
+    fi
+
+    for exam in "${expected_exams[@]}"; do
+        if [ ! -d "$clone_dir/source/exam-practice/$exam" ] ||
+           [ -z "$(find "$clone_dir/source/exam-practice/$exam" -type f -name '*.subject.txt' -print -quit)" ]; then
+            rm -rf -- "$clone_dir" "$stage_dir"
+            echo "${RED}O banco obtido está incompleto: falta $exam ou os seus enunciados.${RST}"
+            return 1
+        fi
+    done
+    bank_commit="$(git -C "$clone_dir/source" rev-parse --short HEAD)"
+
+    if ! python3 - "$clone_dir/source/exam-practice" "$stage_dir" <<'PY_COPY'
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2])
+PY_COPY
+    then
+        rm -rf -- "$clone_dir" "$stage_dir"
+        echo "${RED}Não foi possível preparar os novos ficheiros do banco.${RST}"
+        return 1
+    fi
+    if ! mv -- "$bank_root" "$backup_dir"; then
+        rm -rf -- "$clone_dir" "$stage_dir"
+        echo "${RED}Não foi possível guardar temporariamente o banco atual.${RST}"
+        return 1
+    fi
+    if ! mv -- "$stage_dir" "$bank_root"; then
+        mv -- "$backup_dir" "$bank_root"
+        rm -rf -- "$clone_dir" "$stage_dir"
+        echo "${RED}Não foi possível instalar o novo banco; o banco anterior foi restaurado.${RST}"
+        return 1
+    fi
+
+    rm -rf -- "$backup_dir" "$clone_dir"
+    echo "${GRN}Banco de exercícios atualizado (origem: $bank_commit). O código do programa não foi alterado.${RST}"
+    return 0
 }
 
 default_duration_for() {
@@ -256,6 +463,10 @@ get_levels_for_exam() {
 # concatenates every exam in REAL_ORDER, in order, for a full zero-to-advanced
 # progression.
 build_curriculum() {
+    if [ -n "$SELECTED_LEVEL" ]; then
+        printf '%s\x1f%s\0' "$EXAM_CHOICE" "$SELECTED_LEVEL"
+        return
+    fi
     local exams=()
     if [ "$REAL_MODE" -eq 1 ]; then
         exams=("${REAL_ORDER[@]}")
@@ -281,6 +492,67 @@ pick_exercise() {
     )
     [ "${#files[@]}" -eq 0 ] && return 1
     echo "${files[$((RANDOM % ${#files[@]}))]}"
+}
+
+select_manual_exercise() {
+    local -a exam_names=("$@") levels=() exercises=()
+    local selection exam level exercise i
+
+    while true; do
+        printf '\nSelecione o exame para praticar (q para voltar):\n'
+        for i in "${!exam_names[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "${exam_names[$i]}"; done
+        printf '  ❯ '
+        IFS= read -r selection || return 1
+        [ "$selection" = "q" ] && return 1
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#exam_names[@]}" ]; then
+            exam="${exam_names[$((selection-1))]}"
+            break
+        fi
+        printf '%sOpção inválida. Escolha um número da lista ou q para voltar.%s\n' "$YEL" "$RST"
+    done
+
+    levels=()
+    while IFS= read -r -d '' level; do levels+=("$level"); done < <(get_levels_for_exam "$exam")
+    [ "${#levels[@]}" -gt 0 ] || { echo "Não há níveis disponíveis para $exam."; return 1; }
+    while true; do
+        printf '\nNíveis de %s (q para voltar):\n' "$exam"
+        for i in "${!levels[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "$(basename "${levels[$i]}")"; done
+        printf '  ❯ '
+        IFS= read -r selection || return 1
+        [ "$selection" = "q" ] && return 1
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#levels[@]}" ]; then
+            level="${levels[$((selection-1))]}"
+            break
+        fi
+        printf '%sOpção inválida. Escolha um número da lista ou q para voltar.%s\n' "$YEL" "$RST"
+    done
+
+    exercises=()
+    while IFS= read -r -d '' exercise; do exercises+=("$exercise"); done < <(
+        find "$level" -type f -name '*.subject.txt' -print0 | sort -z
+    )
+    [ "${#exercises[@]}" -gt 0 ] || { echo "Não há exercícios neste nível."; return 1; }
+    while true; do
+        printf '\nExercícios de %s (r sorteia neste nível, q para voltar):\n' "$(basename "$level")"
+        for i in "${!exercises[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "$(basename "${exercises[$i]}" .subject.txt)"; done
+        printf '  ❯ '
+        IFS= read -r selection || return 1
+        if [ "$selection" = "q" ]; then return 1; fi
+        if [ "$selection" = "r" ]; then
+            exercise="${exercises[$((RANDOM % ${#exercises[@]}))]}"
+            break
+        fi
+        if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#exercises[@]}" ]; then
+            exercise="${exercises[$((selection-1))]}"
+            break
+        fi
+        printf '%sOpção inválida. Escolha um número, r ou q para voltar.%s\n' "$YEL" "$RST"
+    done
+
+    EXAM_CHOICE="$exam"
+    SELECTED_LEVEL="$level"
+    SELECTED_EXERCISE="$exercise"
+    return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -326,6 +598,69 @@ fmt_secs() {
 time_is_up() {
     [ "$DURATION_MIN" -eq 0 ] && return 1
     [ "$(seconds_left)" -le 0 ]
+}
+
+timer_status() {
+    local left
+    left="$(seconds_left)"
+    if [ "$left" -lt 0 ]; then
+        printf 'Tempo: sem limite'
+    elif [ "$left" -le 300 ]; then
+        printf '%sTempo: %s · AVISO: restam 5 min ou menos%s' "$YEL$BOLD" "$(fmt_secs "$left")" "$RST"
+    else
+        printf 'Tempo: %s' "$(fmt_secs "$left")"
+    fi
+}
+
+# Read a line while refreshing the countdown once per second in an interactive
+# terminal. The non-interactive path keeps normal shell input behavior.
+read_exercise_line() {
+    local prompt="$1" result_var="$2"
+    local buffer="" char rc
+
+    if [ "$DURATION_MIN" -eq 0 ] || [[ ! -t 0 || ! -t 1 ]]; then
+        IFS= read -r -p "$prompt" buffer || return 1
+        printf -v "$result_var" '%s' "$buffer"
+        return 0
+    fi
+
+    while true; do
+        local left
+        left="$(seconds_left)"
+        [ "$left" -gt 0 ] || return 2
+        printf '\r\033[K%s · %s%s' "$(timer_status)" "$prompt" "$buffer"
+        IFS= read -r -s -n 1 -t 1 char
+        rc=$?
+        if [ "$rc" -gt 128 ]; then
+            continue
+        elif [ "$rc" -ne 0 ]; then
+            printf '\n'
+            return 1
+        fi
+
+        case "$char" in
+            '')
+                printf '\n'
+                printf -v "$result_var" '%s' "$buffer"
+                return 0
+                ;;
+            $'\177'|$'\b')
+                buffer="${buffer%?}"
+                ;;
+            $'\025')
+                buffer=""
+                ;;
+            $'\004')
+                if [ -z "$buffer" ]; then
+                    printf '\n'
+                    return 1
+                fi
+                ;;
+            *)
+                buffer+="$char"
+                ;;
+        esac
+    done
 }
 
 # ---------------------------------------------------------------------------
@@ -494,7 +829,7 @@ run_auto_tests() {
 # ---------------------------------------------------------------------------
 run_exercise() {
     local subject_file="$1" work="$2" level_label="$3"
-    local name expected allowed
+    local name expected allowed cmd
     name=$(subj_field "$subject_file" "Assignment name")
     name="${name:-$(basename "$subject_file" .subject.txt)}"
     expected=$(subj_field "$subject_file" "Expected files")
@@ -536,13 +871,18 @@ EOF
         time_is_up && { echo "${RED}${BOLD}Tempo esgotado.${RST}"; return 2; }
         echo
         hr
-        printf '%s%s%s  ·  %s  ·  Tempo: %s\n' "$BOLD$CYA" "$level_label" "$RST" "${name:-?}" "$(fmt_secs "$(seconds_left)")"
+        printf '%s%s%s  ·  %s  ·  %s\n' "$BOLD$CYA" "$level_label" "$RST" "${name:-?}" "$(timer_status)"
         echo "[e] Editar   [l] Carregar   [c] Compilar   [t] Testar"
         echo "[r] Executar [s] Enunciado  [n] Próximo    [k] Saltar   [q] Sair"
-        if ! read -rp "examshell › " cmd; then
+        local input_status=0
+        read_exercise_line "examshell › " cmd || input_status=$?
+        if [ "$input_status" -eq 1 ]; then
             echo
             echo "${YEL}Entrada encerrada; a sessão será finalizada.${RST}"
             return 3
+        elif [ "$input_status" -eq 2 ]; then
+            echo "${RED}${BOLD}Tempo esgotado.${RST}"
+            return 2
         fi
         time_is_up && { echo "${RED}${BOLD}Tempo esgotado.${RST}"; return 2; }
 
@@ -557,7 +897,7 @@ EOF
                 ;;
             l|load)
                 local src
-                read -rp "Caminho do ficheiro para carregar: " src || src=""
+                read_exercise_line "Caminho do ficheiro para carregar: " src || src=""
                 if [ -z "$src" ] || [ ! -f "$src" ]; then
                     echo "${YEL}Ficheiro não encontrado: $src${RST}"
                 else
@@ -698,7 +1038,10 @@ EOF
                 elif [ -x "$bin" ]; then
                     echo "${DIM}A executar — Ctrl-C interrompe o programa.${RST}"
                     local -a args=()
-                    read -rp "Argumentos (opcional): " -a args || args=()
+                    local args_line=""
+                    read_exercise_line "Argumentos (opcional): " args_line || args_line=""
+                    local -a args=()
+                    read -r -a args <<< "$args_line"
                     "$bin" "${args[@]}"
                     local run_rc=$?
                     echo
@@ -714,7 +1057,7 @@ EOF
                 if [ "$compiled_ok" -eq 1 ] && [ "$AUTO_TESTS_OK" -eq 1 ]; then
                     return 0
                 else
-                    read -rp "A compilação ou os testes ainda falham. Avançar mesmo assim? [s/N] " y
+                    read_exercise_line "A compilação ou os testes ainda falham. Avançar mesmo assim? [s/N] " y || y=""
                     [[ "$y" == [sS] || "$y" == [yY] ]] && return 0
                 fi
                 ;;
@@ -737,23 +1080,7 @@ EOF
 main() {
     parse_args "$@"
     [ "${#COMPILER[@]}" -gt 0 ] || die "CC must name a compiler"
-    need_bin "${COMPILER[0]}"
-    need_bin nm
-    need_bin python3
-    need_bin timeout
-    need_bin awk
-    need_bin sort
-    need_bin find
-    need_bin sed
-    need_bin grep
-    need_bin tr
-    need_bin xargs
-    need_bin basename
-    need_bin mkdir
-    need_bin cp
-    need_bin cat
-    need_bin date
-    [ -d "$EXAM_ROOT" ] || die "exam-practice directory not found at '$EXAM_ROOT' (use -d to point at it)"
+    run_preflight || return 1
 
     choose_exam
     [ "$EXIT_REQUESTED" -eq 1 ] && return 0
@@ -791,13 +1118,28 @@ main() {
     while IFS= read -r -d '' rec; do curriculum+=("$rec"); done < <(build_curriculum)
     local total=${#curriculum[@]}
     [ "$total" -gt 0 ] || die "não foram encontrados níveis para '$EXAM_CHOICE' em '$EXAM_ROOT'"
-    local cleared=0
-    local current_exam=""
+    local -a level_exercises=() level_results=()
+    local idx=0 rec_exam lvl ex current_exam=""
+    local cleared=0 skipped=0
 
+    # Pick each exercise up front so the final report can name pending work.
     for rec in "${curriculum[@]}"; do
+        lvl="${rec#*$'\x1f'}"
+        if [ -n "$SELECTED_EXERCISE" ]; then
+            ex="$SELECTED_EXERCISE"
+        else
+            ex="$(pick_exercise "$lvl")" || ex=""
+        fi
+        level_exercises+=("$ex")
+        level_results+=(pending)
+    done
+
+    for idx in "${!curriculum[@]}"; do
         if time_is_up; then break; fi
-        local rec_exam="${rec%%$'\x1f'*}"
-        local lvl="${rec#*$'\x1f'}"
+        rec="${curriculum[$idx]}"
+        rec_exam="${rec%%$'\x1f'*}"
+        lvl="${rec#*$'\x1f'}"
+        ex="${level_exercises[$idx]}"
 
         if [ "$rec_exam" != "$current_exam" ]; then
             current_exam="$rec_exam"
@@ -805,8 +1147,10 @@ main() {
             section "EXAME · $current_exam"
         fi
 
-        local ex
-        ex="$(pick_exercise "$lvl")" || { echo "${YEL}Sem exercícios neste nível; a sessão vai continuar.${RST}"; continue; }
+        if [ -z "$ex" ]; then
+            echo "${YEL}Sem exercícios neste nível; a sessão vai continuar.${RST}"
+            continue
+        fi
         local work="$session_dir/${rec_exam}_$(basename "$lvl" | tr ' ' '_')"
         mkdir -p "$work"
 
@@ -815,15 +1159,45 @@ main() {
         rc=$?
 
         case $rc in
-            0) cleared=$((cleared+1))
-               echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=cleared" >> "$logfile" ;;
-            1) echo "${YEL}Exercício saltado.${RST}"
-               echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=skipped" >> "$logfile" ;;
-            2) echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=timeout" >> "$logfile"
-               break ;;
-            3) echo "${RED}Sessão terminada pelo utilizador.${RST}"
-               echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=quit" >> "$logfile"
-               break ;;
+            0)
+                level_results[$idx]=completed
+                cleared=$((cleared+1))
+                echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=cleared" >> "$logfile"
+                ;;
+            1)
+                level_results[$idx]=skipped
+                skipped=$((skipped+1))
+                echo "${YEL}Exercício saltado.${RST}"
+                echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=skipped" >> "$logfile"
+                ;;
+            2)
+                echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=timeout" >> "$logfile"
+                break
+                ;;
+            3)
+                echo "${RED}Sessão terminada pelo utilizador.${RST}"
+                echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=quit" >> "$logfile"
+                break
+                ;;
+        esac
+    done
+
+    local -a completed_items=() skipped_items=() pending_items=()
+    local item_label
+    for idx in "${!curriculum[@]}"; do
+        rec="${curriculum[$idx]}"
+        rec_exam="${rec%%$'\x1f'*}"
+        lvl="${rec#*$'\x1f'}"
+        ex="${level_exercises[$idx]}"
+        if [ -n "$ex" ]; then
+            item_label="$rec_exam · $(basename "$lvl") · $(basename "$ex" .subject.txt)"
+        else
+            item_label="$rec_exam · $(basename "$lvl") · sem exercício disponível"
+        fi
+        case "${level_results[$idx]}" in
+            completed) completed_items+=("$item_label") ;;
+            skipped) skipped_items+=("$item_label") ;;
+            pending) pending_items+=("$item_label") ;;
         esac
     done
 
@@ -833,7 +1207,16 @@ main() {
     else
         section "RELATÓRIO · $EXAM_CHOICE"
     fi
-    echo "Níveis concluídos : ${GRN}${cleared} / ${total}${RST}"
+    printf 'Total de níveis     : %s\n' "$total"
+    printf 'Concluídos          : %s / %s\n' "$cleared" "$total"
+    printf 'Saltados            : %s\n' "$skipped"
+    printf 'Pendentes           : %s\n' "${#pending_items[@]}"
+    printf '\n%sConcluídos%s\n' "$GRN$BOLD" "$RST"
+    if [ "${#completed_items[@]}" -eq 0 ]; then echo '  Nenhum'; else for item_label in "${completed_items[@]}"; do printf '  ✓ %s\n' "$item_label"; done; fi
+    printf '\n%sSaltados%s\n' "$YEL$BOLD" "$RST"
+    if [ "${#skipped_items[@]}" -eq 0 ]; then echo '  Nenhum'; else for item_label in "${skipped_items[@]}"; do printf '  - %s\n' "$item_label"; done; fi
+    printf '\n%sPendentes%s\n' "$CYA$BOLD" "$RST"
+    if [ "${#pending_items[@]}" -eq 0 ]; then echo '  Nenhum'; else for item_label in "${pending_items[@]}"; do printf '  · %s\n' "$item_label"; done; fi
     if [ "$DURATION_MIN" -eq 0 ]; then
         echo "Tempo utilizado  : sem limite"
     else
@@ -841,7 +1224,7 @@ main() {
     fi
     echo "Registo da sessão: $logfile"
     hr
-    echo "$(date -Iseconds) cleared=$cleared total=$total" >> "$logfile"
+    echo "$(date -Iseconds) cleared=$cleared skipped=$skipped pending=${#pending_items[@]} total_levels=$total" >> "$logfile"
 }
 
 main "$@"
