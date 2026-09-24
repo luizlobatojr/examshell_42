@@ -104,38 +104,41 @@ exercise_points_for() {
 show_exam_progress() {
     local exam_name="${1:-}"
     local exam_score=0 exam_total=0 idx rec rec_exam ex label
-    local -a solved=()
-
-    for rec in "${curriculum[@]}"; do
-        rec_exam="${rec%%$'\x1f'*}"
-        if [ "$rec_exam" = "$exam_name" ]; then
-            exam_total=$((exam_total + $(exercise_points_for "$exam_name")))
-            ex="${level_exercises[$idx]:-}"
-        fi
-    done
+    local -a solved=() pending=() skipped=()
 
     for idx in "${!curriculum[@]}"; do
         rec="${curriculum[$idx]}"
         rec_exam="${rec%%$'\x1f'*}"
         [ "$rec_exam" = "$exam_name" ] || continue
-        if [ "${level_results[$idx]:-pending}" = "completed" ]; then
-            ex="${level_exercises[$idx]:-}"
-            label="$(basename "$ex" .subject.txt)"
-            solved+=("$label")
-            exam_score=$((exam_score + $(exercise_points_for "$exam_name")))
-        fi
+        ex="${level_exercises[$idx]:-}"
+        label="$(basename "$ex" .subject.txt)"
+        exam_total=$((exam_total + $(exercise_points_for "$exam_name")))
+
+        case "${level_results[$idx]:-pending}" in
+            completed)
+                solved+=("$label")
+                exam_score=$((exam_score + $(exercise_points_for "$exam_name")))
+                ;;
+            skipped)
+                skipped+=("$label")
+                ;;
+            pending)
+                pending+=("$label")
+                ;;
+        esac
     done
 
     echo
     printf '%s%s%s\n' "$BOLD$CYA" "$(tr_text 'PROGRESSO DO EXAME' 'EXAM PROGRESS')" "$RST"
-    printf '  %s: %s / %s\n' "$(tr_text 'Pontuação atual' 'Current score')" "$exam_score" "$exam_total"
-    printf '  %s: ' "$(tr_text 'Questões resolvidas' 'Solved questions')"
-    if [ "${#solved[@]}" -eq 0 ]; then
-        echo "$(tr_text 'nenhuma' 'none')"
-    else
-        printf '%s\n' "${solved[*]}"
-    fi
-    printf '  %s: %s\n' "$(tr_text 'Pontuação da sessão' 'Session score')" "$session_score"
+    printf '  %s%s%s\n' "$GRN$BOLD" "$(tr_text '✓ Pontuação atual' '✓ Current score')" "$RST"
+    printf '    %s: %s / %s\n' "$(tr_text 'Pontos' 'Points')" "$exam_score" "$exam_total"
+    printf '    %s: %s\n' "$(tr_text 'Sessão' 'Session')" "$session_score"
+    printf '  %s%s%s\n' "$BLU$BOLD" "$(tr_text '✓ Questões resolvidas' '✓ Solved questions')" "$RST"
+    if [ "${#solved[@]}" -eq 0 ]; then echo "    $(tr_text 'nenhuma' 'none')"; else printf '    %s\n' "${solved[*]}"; fi
+    printf '  %s%s%s\n' "$YEL$BOLD" "$(tr_text '○ Pendentes' '○ Pending')" "$RST"
+    if [ "${#pending[@]}" -eq 0 ]; then echo "    $(tr_text 'nenhuma' 'none')"; else printf '    %s\n' "${pending[*]}"; fi
+    printf '  %s%s%s\n' "$RED$BOLD" "$(tr_text '✕ Saltadas' '✕ Skipped')" "$RST"
+    if [ "${#skipped[@]}" -eq 0 ]; then echo "    $(tr_text 'nenhuma' 'none')"; else printf '    %s\n' "${skipped[*]}"; fi
 }
 
 ui() {
@@ -252,37 +255,13 @@ save_session_progress() {
     } > "$SESSION_PROGRESS_FILE"
 }
 
+clear_session_progress() {
+    mkdir -p "$USER_CONFIG_DIR" || return 1
+    : > "$SESSION_PROGRESS_FILE"
+}
+
 load_session_progress() {
-    local current_session_key saved_session_key=""
-    if [ "$REAL_MODE" -eq 1 ]; then
-        current_session_key="real"
-    else
-        current_session_key="${EXAM_CHOICE:-}"
-    fi
-    [ -r "$SESSION_PROGRESS_FILE" ] || return 0
-    while IFS='=' read -r key value; do
-        [ -n "$key" ] || continue
-        if [ "$key" = "session" ]; then
-            saved_session_key="$value"
-        fi
-    done < "$SESSION_PROGRESS_FILE"
-    [ "$saved_session_key" = "$current_session_key" ] || return 0
-
-    local -a loaded_ex=() loaded_res=()
-    local line rec_exam rec_level rec_ex rec_status
-    while IFS=$'\t' read -r rec_exam rec_level rec_ex rec_status; do
-        [ -n "$rec_exam" ] || continue
-        loaded_ex+=("$rec_ex")
-        loaded_res+=("$rec_status")
-    done < <(tail -n +2 "$SESSION_PROGRESS_FILE")
-
-    local idx
-    for idx in "${!curriculum[@]}"; do
-        if [ "$idx" -lt "${#loaded_ex[@]}" ]; then
-            level_exercises[$idx]="${loaded_ex[$idx]}"
-            level_results[$idx]="${loaded_res[$idx]:-pending}"
-        fi
-    done
+    return 0
 }
 
 settings_menu() {
@@ -1401,9 +1380,7 @@ main() {
         level_results+=(pending)
     done
 
-    if [ -r "$SESSION_PROGRESS_FILE" ]; then
-        load_session_progress
-    fi
+    clear_session_progress
 
     for idx in "${!curriculum[@]}"; do
         if [ "${level_results[$idx]:-pending}" = "completed" ]; then
@@ -1474,6 +1451,7 @@ main() {
     save_session_progress
     SELECTED_LEVEL=""
     SELECTED_EXERCISE=""
+    clear_session_progress
 
     local -a completed_items=() skipped_items=() pending_items=()
     local item_label
