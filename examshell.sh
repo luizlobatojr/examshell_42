@@ -63,7 +63,6 @@ SELECTED_EXERCISE=""
 LANGUAGE="pt"
 USER_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/examshell"
 WORKDIR_ROOT="${HOME}/.examshell/sessions"
-PROGRESS_FILE="$USER_CONFIG_DIR/progress"
 SESSION_PROGRESS_FILE="$USER_CONFIG_DIR/session_state"
 CC=${CC:-cc}
 read -r -a COMPILER <<< "$CC"
@@ -112,8 +111,6 @@ ui() {
             settings_title) printf 'Settings' ;;
             language) printf 'Language' ;;
             back) printf 'Back' ;;
-            save_progress) printf 'Save progress' ;;
-            reset_progress) printf 'Reset progress' ;;
             all_level) printf 'All exercises in this level' ;;
             choose_language) printf 'Choose a language:' ;;
             language_saved) printf 'Language set to English.' ;;
@@ -150,8 +147,6 @@ ui() {
             settings_title) printf 'Configurações' ;;
             language) printf 'Idioma' ;;
             back) printf 'Voltar' ;;
-            save_progress) printf 'Salvar progresso' ;;
-            reset_progress) printf 'Zerar progresso' ;;
             all_level) printf 'Todos os exercícios deste nível' ;;
             choose_language) printf 'Selecione um idioma:' ;;
             language_saved) printf 'Idioma definido como Português.' ;;
@@ -188,38 +183,6 @@ load_language() {
 save_language() {
     mkdir -p "$USER_CONFIG_DIR" || return 1
     (umask 077; printf 'language=%s\n' "$LANGUAGE" > "$USER_CONFIG_DIR/config")
-}
-
-save_progress_state() {
-    mkdir -p "$USER_CONFIG_DIR" || return 1
-    (umask 077; {
-        printf 'exam=%s\n' "${EXAM_CHOICE:-}"
-        printf 'real=%s\n' "${REAL_MODE:-0}"
-        printf 'level=%s\n' "${SELECTED_LEVEL:-}"
-        printf 'exercise=%s\n' "${SELECTED_EXERCISE:-}"
-        printf 'language=%s\n' "${LANGUAGE:-pt}"
-    } > "$PROGRESS_FILE")
-}
-
-load_saved_progress() {
-    [ -r "$PROGRESS_FILE" ] || return 0
-    while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-            exam=*) EXAM_CHOICE="${line#exam=}" ;;
-            real=*) REAL_MODE="${line#real=}" ;;
-            level=*) SELECTED_LEVEL="${line#level=}" ;;
-            exercise=*) SELECTED_EXERCISE="${line#exercise=}" ;;
-            language=*) LANGUAGE="${line#language=}" ;;
-        esac
-    done < "$PROGRESS_FILE"
-}
-
-reset_saved_progress() {
-    rm -f -- "$PROGRESS_FILE" "$SESSION_PROGRESS_FILE"
-    EXAM_CHOICE=""
-    SELECTED_LEVEL=""
-    SELECTED_EXERCISE=""
-    REAL_MODE=0
 }
 
 save_session_progress() {
@@ -466,8 +429,6 @@ choose_exam() {
             printf '  %s[ r]%s %s\n' "$MAG" "$RST" "$(ui random_exam)"
             printf '  %s[ s]%s %s\n' "$MAG" "$RST" "$(ui choose_exercise)"
             printf '  %s[ c]%s %s\n' "$MAG" "$RST" "$(ui settings)"
-            printf '  %s[ p]%s %s\n' "$MAG" "$RST" "$(ui save_progress)"
-            printf '  %s[ z]%s %s\n' "$YEL" "$RST" "$(ui reset_progress)"
             case "$UPDATE_STATE" in
                 available)
                     printf '  %s[ u]%s %s\n' "$MAG" "$RST" "$(ui update_available "$UPDATE_COUNT")"
@@ -498,19 +459,6 @@ choose_exam() {
                     ;;
                 c)
                     settings_menu
-                    ;;
-                p|P)
-                    if save_progress_state; then
-                        echo "${GRN}$(tr_text 'Progresso salvo com sucesso.' 'Progress saved successfully.')${RST}"
-                    else
-                        echo "${RED}$(tr_text 'Não foi possível salvar o progresso.' 'Could not save progress.')${RST}"
-                    fi
-                    read -r -p "$(tr_text 'Pressione ENTER para continuar › ' 'Press ENTER to continue › ')" _ || true
-                    ;;
-                z|Z)
-                    reset_saved_progress
-                    echo "${YEL}$(tr_text 'Progresso zerado.' 'Progress reset.')${RST}"
-                    read -r -p "$(tr_text 'Pressione ENTER para continuar › ' 'Press ENTER to continue › ')" _ || true
                     ;;
                 u)
                     update_project
@@ -1004,6 +952,12 @@ run_auto_tests() {
         # Drop a bare trailing "$>" prompt line: it's just the shell prompt
         # closing the transcript, not real program output.
         exp=$(printf '%s\n' "$exp" | sed -E '$ { /^\$>[[:space:]]*$/d }')
+        # A lone '$' in these transcripts can represent an empty output line.
+        # Command substitution strips trailing newlines, so normalize it when
+        # the invocation does not use cat -e to display the marker literally.
+        if [ "$exp" = '$' ] && [[ "$inv" != *'cat -e'* ]]; then
+            exp=""
+        fi
 
         # Examples with "[...]" are truncated by the author on purpose
         # (e.g. fizzbuzz's 1..100 list) and can't be matched automatically.
@@ -1324,7 +1278,6 @@ EOF
 # ---------------------------------------------------------------------------
 main() {
     load_language
-    load_saved_progress
     parse_args "$@"
     [ "${#COMPILER[@]}" -gt 0 ] || die "CC must name a compiler"
     run_preflight || return 1
