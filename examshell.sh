@@ -1376,12 +1376,20 @@ main() {
     local -a level_exercises=() level_results=()
     local idx=0 rec_exam lvl ex current_exam=""
     local cleared=0 skipped=0
+    local selected_level_mode=0
+    if [ -n "$SELECTED_LEVEL" ] && [ -z "$SELECTED_EXERCISE" ]; then
+        selected_level_mode=1
+    fi
 
     # Pick each exercise up front so the final report can name pending work.
     for rec in "${curriculum[@]}"; do
+        rec_exam="${rec%%$'\x1f'*}"
         lvl="${rec#*$'\x1f'}"
         if [ -n "$SELECTED_EXERCISE" ]; then
             ex="$SELECTED_EXERCISE"
+        elif [ "$selected_level_mode" -eq 1 ]; then
+            ex="$lvl"
+            lvl="$(dirname "$lvl")"
         else
             ex="$(pick_exercise "$lvl")" || ex=""
         fi
@@ -1409,6 +1417,9 @@ main() {
         rec="${curriculum[$idx]}"
         rec_exam="${rec%%$'\x1f'*}"
         lvl="${rec#*$'\x1f'}"
+        if [ "$selected_level_mode" -eq 1 ]; then
+            lvl="$(dirname "$lvl")"
+        fi
         ex="${level_exercises[$idx]}"
 
         if [ "$rec_exam" != "$current_exam" ]; then
@@ -1454,6 +1465,8 @@ main() {
     done
 
     save_session_progress
+    SELECTED_LEVEL=""
+    SELECTED_EXERCISE=""
 
     local -a completed_items=() skipped_items=() pending_items=()
     local item_label
