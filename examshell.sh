@@ -63,6 +63,8 @@ SELECTED_EXERCISE=""
 LANGUAGE="pt"
 USER_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/examshell"
 WORKDIR_ROOT="${HOME}/.examshell/sessions"
+PROGRESS_FILE="$USER_CONFIG_DIR/progress"
+SESSION_PROGRESS_FILE="$USER_CONFIG_DIR/session_state"
 CC=${CC:-cc}
 read -r -a COMPILER <<< "$CC"
 CFLAGS="-Wall -Wextra -Werror -Wpedantic"
@@ -110,6 +112,9 @@ ui() {
             settings_title) printf 'Settings' ;;
             language) printf 'Language' ;;
             back) printf 'Back' ;;
+            save_progress) printf 'Save progress' ;;
+            reset_progress) printf 'Reset progress' ;;
+            all_level) printf 'All exercises in this level' ;;
             choose_language) printf 'Choose a language:' ;;
             language_saved) printf 'Language set to English.' ;;
             invalid_option) printf 'Invalid option.' ;;
@@ -145,6 +150,9 @@ ui() {
             settings_title) printf 'Configurações' ;;
             language) printf 'Idioma' ;;
             back) printf 'Voltar' ;;
+            save_progress) printf 'Salvar progresso' ;;
+            reset_progress) printf 'Zerar progresso' ;;
+            all_level) printf 'Todos os exercícios deste nível' ;;
             choose_language) printf 'Selecione um idioma:' ;;
             language_saved) printf 'Idioma definido como Português.' ;;
             invalid_option) printf 'Opção inválida.' ;;
@@ -180,6 +188,93 @@ load_language() {
 save_language() {
     mkdir -p "$USER_CONFIG_DIR" || return 1
     (umask 077; printf 'language=%s\n' "$LANGUAGE" > "$USER_CONFIG_DIR/config")
+}
+
+save_progress_state() {
+    mkdir -p "$USER_CONFIG_DIR" || return 1
+    (umask 077; {
+        printf 'exam=%s\n' "${EXAM_CHOICE:-}"
+        printf 'real=%s\n' "${REAL_MODE:-0}"
+        printf 'level=%s\n' "${SELECTED_LEVEL:-}"
+        printf 'exercise=%s\n' "${SELECTED_EXERCISE:-}"
+        printf 'language=%s\n' "${LANGUAGE:-pt}"
+    } > "$PROGRESS_FILE")
+}
+
+load_saved_progress() {
+    [ -r "$PROGRESS_FILE" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            exam=*) EXAM_CHOICE="${line#exam=}" ;;
+            real=*) REAL_MODE="${line#real=}" ;;
+            level=*) SELECTED_LEVEL="${line#level=}" ;;
+            exercise=*) SELECTED_EXERCISE="${line#exercise=}" ;;
+            language=*) LANGUAGE="${line#language=}" ;;
+        esac
+    done < "$PROGRESS_FILE"
+}
+
+reset_saved_progress() {
+    rm -f -- "$PROGRESS_FILE" "$SESSION_PROGRESS_FILE"
+    EXAM_CHOICE=""
+    SELECTED_LEVEL=""
+    SELECTED_EXERCISE=""
+    REAL_MODE=0
+}
+
+save_session_progress() {
+    local current_session_key
+    if [ "$REAL_MODE" -eq 1 ]; then
+        current_session_key="real"
+    else
+        current_session_key="${EXAM_CHOICE:-}"
+    fi
+    mkdir -p "$USER_CONFIG_DIR" || return 1
+    : > "$SESSION_PROGRESS_FILE"
+    {
+        printf 'session=%s\n' "$current_session_key"
+        for idx in "${!curriculum[@]}"; do
+            local rec="${curriculum[$idx]}"
+            local rec_exam="${rec%%$'\x1f'*}"
+            local rec_level="${rec#*$'\x1f'}"
+            local rec_ex="${level_exercises[$idx]:-}"
+            local rec_status="${level_results[$idx]:-pending}"
+            printf '%s\t%s\t%s\t%s\n' "$rec_exam" "$rec_level" "$rec_ex" "$rec_status"
+        done
+    } > "$SESSION_PROGRESS_FILE"
+}
+
+load_session_progress() {
+    local current_session_key saved_session_key=""
+    if [ "$REAL_MODE" -eq 1 ]; then
+        current_session_key="real"
+    else
+        current_session_key="${EXAM_CHOICE:-}"
+    fi
+    [ -r "$SESSION_PROGRESS_FILE" ] || return 0
+    while IFS='=' read -r key value; do
+        [ -n "$key" ] || continue
+        if [ "$key" = "session" ]; then
+            saved_session_key="$value"
+        fi
+    done < "$SESSION_PROGRESS_FILE"
+    [ "$saved_session_key" = "$current_session_key" ] || return 0
+
+    local -a loaded_ex=() loaded_res=()
+    local line rec_exam rec_level rec_ex rec_status
+    while IFS=$'\t' read -r rec_exam rec_level rec_ex rec_status; do
+        [ -n "$rec_exam" ] || continue
+        loaded_ex+=("$rec_ex")
+        loaded_res+=("$rec_status")
+    done < <(tail -n +2 "$SESSION_PROGRESS_FILE")
+
+    local idx
+    for idx in "${!curriculum[@]}"; do
+        if [ "$idx" -lt "${#loaded_ex[@]}" ]; then
+            level_exercises[$idx]="${loaded_ex[$idx]}"
+            level_results[$idx]="${loaded_res[$idx]:-pending}"
+        fi
+    done
 }
 
 settings_menu() {
@@ -371,6 +466,8 @@ choose_exam() {
             printf '  %s[ r]%s %s\n' "$MAG" "$RST" "$(ui random_exam)"
             printf '  %s[ s]%s %s\n' "$MAG" "$RST" "$(ui choose_exercise)"
             printf '  %s[ c]%s %s\n' "$MAG" "$RST" "$(ui settings)"
+            printf '  %s[ p]%s %s\n' "$MAG" "$RST" "$(ui save_progress)"
+            printf '  %s[ z]%s %s\n' "$YEL" "$RST" "$(ui reset_progress)"
             case "$UPDATE_STATE" in
                 available)
                     printf '  %s[ u]%s %s\n' "$MAG" "$RST" "$(ui update_available "$UPDATE_COUNT")"
@@ -394,13 +491,26 @@ choose_exam() {
             fi
 
             case "$pick" in
-                q)
+                q|Q|b|B)
                     EXIT_REQUESTED=1
                     echo "$(tr_text 'Até logo.' 'Goodbye.')"
                     return 0
                     ;;
                 c)
                     settings_menu
+                    ;;
+                p|P)
+                    if save_progress_state; then
+                        echo "${GRN}$(tr_text 'Progresso salvo com sucesso.' 'Progress saved successfully.')${RST}"
+                    else
+                        echo "${RED}$(tr_text 'Não foi possível salvar o progresso.' 'Could not save progress.')${RST}"
+                    fi
+                    read -r -p "$(tr_text 'Pressione ENTER para continuar › ' 'Press ENTER to continue › ')" _ || true
+                    ;;
+                z|Z)
+                    reset_saved_progress
+                    echo "${YEL}$(tr_text 'Progresso zerado.' 'Progress reset.')${RST}"
+                    read -r -p "$(tr_text 'Pressione ENTER para continuar › ' 'Press ENTER to continue › ')" _ || true
                     ;;
                 u)
                     update_project
@@ -529,7 +639,14 @@ get_levels_for_exam() {
 # progression.
 build_curriculum() {
     if [ -n "$SELECTED_LEVEL" ]; then
-        printf '%s\x1f%s\0' "$EXAM_CHOICE" "$SELECTED_LEVEL"
+        if [ -n "$SELECTED_EXERCISE" ]; then
+            printf '%s\x1f%s\0' "$EXAM_CHOICE" "$SELECTED_EXERCISE"
+            return
+        fi
+        local lvl="$SELECTED_LEVEL"
+        while IFS= read -r -d '' ex; do
+            printf '%s\x1f%s\0' "$EXAM_CHOICE" "$ex"
+        done < <(find "$lvl" -type f -name '*.subject.txt' -print0 | sort -z)
         return
     fi
     local exams=()
@@ -586,7 +703,7 @@ select_manual_exercise() {
                 printf '  [q] %s\n' "$(ui back)"
                 printf '  ❯ '
                 IFS= read -r selection || { clear_terminal; return 1; }
-                if [ "$selection" = "q" ]; then clear_terminal; continue 2; fi
+                if [ "$selection" = "q" ] || [ "$selection" = "b" ] || [ "$selection" = "B" ]; then clear_terminal; continue 2; fi
                 if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "${#levels[@]}" ]; then
                     level="${levels[$((selection-1))]}"
                     exercises=()
@@ -603,12 +720,20 @@ select_manual_exercise() {
                         fi
                         for i in "${!exercises[@]}"; do printf '  [%02d] %s\n' "$((i+1))" "$(basename "${exercises[$i]}" .subject.txt)"; done
                         if [ "${#exercises[@]}" -gt 0 ]; then
+                            printf '  [a] %s\n' "$(ui all_level)"
                             printf '  [r] %s\n' "$(tr_text 'Sortear neste nível' 'Pick randomly from this level')"
                         fi
-                        printf '  [q] %s\n' "$(ui back)"
+                        printf '  [b] %s\n' "$(ui back)"
+                        printf '  [q] %s\n' "$(ui quit)"
                         printf '  ❯ '
                         IFS= read -r selection || { clear_terminal; return 1; }
-                        if [ "$selection" = "q" ]; then clear_terminal; continue 2; fi
+                        if [ "$selection" = "q" ] || [ "$selection" = "b" ] || [ "$selection" = "B" ]; then clear_terminal; continue 2; fi
+                        if [ "$selection" = "a" ] || [ "$selection" = "A" ]; then
+                            EXAM_CHOICE="$exam"
+                            SELECTED_LEVEL="$level"
+                            SELECTED_EXERCISE=""
+                            return 0
+                        fi
                         if [ "$selection" = "r" ] && [ "${#exercises[@]}" -gt 0 ]; then
                             exercise="${exercises[$((RANDOM % ${#exercises[@]}))]}"
                             break
@@ -617,7 +742,7 @@ select_manual_exercise() {
                             exercise="${exercises[$((selection-1))]}"
                             break
                         fi
-                        printf '%s%s%s\n' "$YEL" "$(tr_text 'Opção inválida. Escolha um número, r ou q para voltar.' 'Invalid option. Choose a number, r, or q to go back.')" "$RST"
+                        printf '%s%s%s\n' "$YEL" "$(tr_text 'Opção inválida. Escolha um número, a, r, b ou q para voltar.' 'Invalid option. Choose a number, a, r, b, or q to go back.')" "$RST"
                     done
                     break
                 fi
@@ -709,7 +834,7 @@ timer_status() {
 # input.
 read_exercise_line() {
     local prompt="$1" result_var="$2"
-    local buffer="" char rc prompt_shown=0
+    local buffer="" char rc prompt_shown=0 left
 
     if [ "$DURATION_MIN" -eq 0 ] || [[ ! -t 0 || ! -t 1 ]]; then
         IFS= read -r -p "$prompt" buffer || return 1
@@ -718,7 +843,6 @@ read_exercise_line() {
     fi
 
     while true; do
-        local left
         left="$(seconds_left)"
         [ "$left" -gt 0 ] || return 2
         if [ "$prompt_shown" -eq 0 ]; then
@@ -771,7 +895,8 @@ check_allowed_functions() {
     local binary="$1" allowed_raw="$2"
     # Normalise the allowed list: "None" / "" => nothing is allowed.
     local allowed_norm
-    allowed_norm=$(echo "$allowed_raw" | tr ',' ' ' | tr -s ' ')
+    allowed_norm=$(printf '%s' "$allowed_raw" | tr ',' ' ' | tr -s ' ' | sed 's/[[:space:]]\+/ /g')
+    allowed_norm=$(printf '%s' "$allowed_norm" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     if echo "$allowed_norm" | grep -qiw "none"; then
         allowed_norm=""
     fi
@@ -789,12 +914,17 @@ check_allowed_functions() {
         # nm prints versioned symbols as "name@GLIBC_x.y" (or "@@..."); strip
         # the version suffix before comparing against the allow/ignore lists.
         local sym="${raw_sym%%@*}"
+        sym="${sym##+([[:space:]])}"
+        sym="${sym%%+([[:space:]])}"
         case " $IGNORE_SYMS " in *" $sym "*) continue ;; esac
         local ok=0
         for a in $allowed_norm; do
-            [ "$sym" = "$a" ] && ok=1 && break
+            local allowed_sym="${a%%@*}"
+            allowed_sym="${allowed_sym##+([[:space:]])}"
+            allowed_sym="${allowed_sym%%+([[:space:]])}"
+            [ "$sym" = "$allowed_sym" ] && ok=1 && break
         done
-        [ "$ok" -eq 0 ] && violations+=("$raw_sym")
+        [ "$ok" -eq 0 ] && violations+=("$sym")
     done
 
     if [ "${#violations[@]}" -gt 0 ]; then
@@ -1194,6 +1324,7 @@ EOF
 # ---------------------------------------------------------------------------
 main() {
     load_language
+    load_saved_progress
     parse_args "$@"
     [ "${#COMPILER[@]}" -gt 0 ] || die "CC must name a compiler"
     run_preflight || return 1
@@ -1258,7 +1389,22 @@ main() {
         level_results+=(pending)
     done
 
+    if [ -r "$SESSION_PROGRESS_FILE" ]; then
+        load_session_progress
+    fi
+
     for idx in "${!curriculum[@]}"; do
+        if [ "${level_results[$idx]:-pending}" = "completed" ]; then
+            cleared=$((cleared+1))
+        elif [ "${level_results[$idx]:-pending}" = "skipped" ]; then
+            skipped=$((skipped+1))
+        fi
+    done
+
+    for idx in "${!curriculum[@]}"; do
+        if [ "${level_results[$idx]:-pending}" = "completed" ] || [ "${level_results[$idx]:-pending}" = "skipped" ]; then
+            continue
+        fi
         if time_is_up; then break; fi
         rec="${curriculum[$idx]}"
         rec_exam="${rec%%$'\x1f'*}"
@@ -1304,7 +1450,10 @@ main() {
                 break
                 ;;
         esac
+        save_session_progress
     done
+
+    save_session_progress
 
     local -a completed_items=() skipped_items=() pending_items=()
     local item_label
