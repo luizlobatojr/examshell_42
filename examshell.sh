@@ -93,6 +93,51 @@ tr_text() {
     if [ "$LANGUAGE" = en ]; then printf '%s' "$en"; else printf '%s' "$pt"; fi
 }
 
+exercise_points_for() {
+    local exam_name="${1:-}"
+    case "$exam_name" in
+        final-exam) printf '%s' 6 ;;
+        *) printf '%s' 10 ;;
+    esac
+}
+
+show_exam_progress() {
+    local exam_name="${1:-}"
+    local exam_score=0 exam_total=0 idx rec rec_exam ex label
+    local -a solved=()
+
+    for rec in "${curriculum[@]}"; do
+        rec_exam="${rec%%$'\x1f'*}"
+        if [ "$rec_exam" = "$exam_name" ]; then
+            exam_total=$((exam_total + $(exercise_points_for "$exam_name")))
+            ex="${level_exercises[$idx]:-}"
+        fi
+    done
+
+    for idx in "${!curriculum[@]}"; do
+        rec="${curriculum[$idx]}"
+        rec_exam="${rec%%$'\x1f'*}"
+        [ "$rec_exam" = "$exam_name" ] || continue
+        if [ "${level_results[$idx]:-pending}" = "completed" ]; then
+            ex="${level_exercises[$idx]:-}"
+            label="$(basename "$ex" .subject.txt)"
+            solved+=("$label")
+            exam_score=$((exam_score + $(exercise_points_for "$exam_name")))
+        fi
+    done
+
+    echo
+    printf '%s%s%s\n' "$BOLD$CYA" "$(tr_text 'PROGRESSO DO EXAME' 'EXAM PROGRESS')" "$RST"
+    printf '  %s: %s / %s\n' "$(tr_text 'Pontuação atual' 'Current score')" "$exam_score" "$exam_total"
+    printf '  %s: ' "$(tr_text 'Questões resolvidas' 'Solved questions')"
+    if [ "${#solved[@]}" -eq 0 ]; then
+        echo "$(tr_text 'nenhuma' 'none')"
+    else
+        printf '%s\n' "${solved[*]}"
+    fi
+    printf '  %s: %s\n' "$(tr_text 'Pontuação da sessão' 'Session score')" "$session_score"
+}
+
 ui() {
     local key="$1"
     if [ "$LANGUAGE" = "en" ]; then
@@ -1329,7 +1374,13 @@ main() {
     local -a level_exercises=() level_results=()
     local idx=0 rec_exam lvl ex current_exam=""
     local cleared=0 skipped=0
+    local session_score=0 total_possible_score=0 exercise_points
     local selected_level_mode=0
+    for rec in "${curriculum[@]}"; do
+        rec_exam="${rec%%$'\x1f'*}"
+        exercise_points=$(exercise_points_for "$rec_exam")
+        total_possible_score=$((total_possible_score + exercise_points))
+    done
     if [ -n "$SELECTED_LEVEL" ] && [ -z "$SELECTED_EXERCISE" ]; then
         selected_level_mode=1
     fi
@@ -1379,6 +1430,7 @@ main() {
             current_exam="$rec_exam"
             echo
             section "EXAME · $current_exam"
+            show_exam_progress "$current_exam"
         fi
 
         if [ -z "$ex" ]; then
@@ -1396,13 +1448,15 @@ main() {
             0)
                 level_results[$idx]=completed
                 cleared=$((cleared+1))
-                echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=cleared" >> "$logfile"
+                session_score=$((session_score + $(exercise_points_for "$current_exam")))
+                echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=cleared score=$(exercise_points_for "$current_exam")" >> "$logfile"
+                show_exam_progress "$current_exam"
                 ;;
             1)
                 level_results[$idx]=skipped
                 skipped=$((skipped+1))
                 echo "${YEL}$(tr_text 'Exercício saltado.' 'Exercise skipped.')${RST}"
-                echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=skipped" >> "$logfile"
+                echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=skipped score=0" >> "$logfile"
                 ;;
             2)
                 echo "$current_exam $(basename "$lvl") exercise=$(basename "$ex") result=timeout" >> "$logfile"
@@ -1451,11 +1505,13 @@ main() {
         printf 'Completed           : %s / %s\n' "$cleared" "$total"
         printf 'Skipped             : %s\n' "$skipped"
         printf 'Pending             : %s\n' "${#pending_items[@]}"
+        printf 'Score               : %s / %s\n' "$session_score" "$total_possible_score"
     else
         printf 'Total de níveis     : %s\n' "$total"
         printf 'Concluídos          : %s / %s\n' "$cleared" "$total"
         printf 'Saltados            : %s\n' "$skipped"
         printf 'Pendentes           : %s\n' "${#pending_items[@]}"
+        printf 'Pontuação           : %s / %s\n' "$session_score" "$total_possible_score"
     fi
     printf '\n%s%s%s\n' "$GRN$BOLD" "$(tr_text 'Concluídos' 'Completed')" "$RST"
     if [ "${#completed_items[@]}" -eq 0 ]; then echo "  $(tr_text 'Nenhum' 'None')"; else for item_label in "${completed_items[@]}"; do printf '  ✓ %s\n' "$item_label"; done; fi
